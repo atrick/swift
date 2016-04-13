@@ -53,8 +53,6 @@ Two types are related if any of these conditions hold:
 
 See `Related Type Examples`_.
 
-.. _strictaliasrules:
-
 Strict Alias Rules
 ------------------
 
@@ -136,8 +134,6 @@ Layout compatibility is transitive.
 
 See `Layout Compatible Examples`_
 
-.. _layoutcompatiblerules:
-
 Layout Compatible Rules
 -----------------------
 
@@ -192,10 +188,10 @@ legally as::
 In the future, an API will likely exist to allow legal type
 punning. This could be useful for external APIs that require pointer
 arguments and for manual memory layout. Loads and stores of type
-punned memory would still need to follow the :ref:`layout rules
-<layoutcompatiblerules>` for loads and stores, but would be exempt
-from the :ref:`strict alias rules <strictaliasrules>`. Such an API, for
-example, would allow accessing same address as both ``Int32`` and ``UInt32``.
+punned memory would still need to follow the `Layout Compatible Rules`_
+for loads and stores, but would be exempt from the `Strict Alias
+Rules`_. Such an API, for example, would allow accessing same address
+as both ``Int32`` and ``UInt32``.
 
 .. FIXME Reference voidpointer.md once it is a proposal.
 
@@ -240,11 +236,10 @@ is ever dereferenced. Consider this example::
   print(b.i)
 
 This program exhibits undefined behavior for two reasons. First, it
-violates :ref:`strict aliasing rule #1 <strictaliasrules>` because the
-same memory object may be accessed via unrelated class types. Second,
-it violates :ref:`layout compatible rule #1 <layoutcompatiblerules>`
-because there is no guarantee of layout among unrelated classes even
-if they are nonresilient.
+violates `Strict Alias Rules`_ (#1) because the same memory object may
+be accessed via unrelated class types. Second, it violates `Layout
+Compatible Rules`_ (#1) because there is no guarantee of layout among
+unrelated classes even if they are nonresilient.
 
 .. _pointercastexample:
 
@@ -295,7 +290,7 @@ Examples
 Related Type Examples
 ---------------------
 
-Calls to ``related`` and ``unrelated`` obey the :ref:`strict alias rule <strictaliasrules>`::
+Calls to ``related`` and ``unrelated`` obey the `Strict Alias Rules`_::
    
   protocol P {
     var i: Int { get }
@@ -366,7 +361,8 @@ Layout Compatible Examples
 --------------------------
 
 Calls to ``mcompatible``, ``compatible``, and ``incompatible`` reflect
-:ref:`layout compatible rules <layoutcompatiblerules>` as their names signify. Calls to ``unknown`` take invalidly formed addresses::
+`Layout Compatible Rules`_ as their names signify. Calls to ``unknown``
+take invalidly formed addresses::
  
   class C {
     var i: Int32 = 7
