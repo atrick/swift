@@ -70,8 +70,8 @@ aliasing rules, then the program exhibits undefined behavior.
    A subtle aspect of this is that generation of an address that
    violates strict aliasing is not in itself undefined behavior. The
    address does need to be accessed by the program code, and one of
-   those accesses must write to memory. For details, see
-   :ref:`pointer casting example <pointercastexample>`.
+   those accesses must write to memory. For details, see `Pointer
+   Casting Example`_.
 
 Exempt Types
 ------------
@@ -241,7 +241,8 @@ be accessed via unrelated class types. Second, it violates `Layout
 Compatible Rules`_ (#1) because there is no guarantee of layout among
 unrelated classes even if they are nonresilient.
 
-.. _pointercastexample:
+Pointer Casting Example
+-----------------------
 
 Merely forming an address that violates strict aliasing is not itself
 undefined behavior; the address must have some static use within the
