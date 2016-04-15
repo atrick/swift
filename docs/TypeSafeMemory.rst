@@ -78,9 +78,9 @@ Exempt Types
 
 Swift does not currently specify any types that are exempt from strict
 aliasing. In the future, it may be useful to declare certain types as
-exempt--for example, that ``UInt8`` aliases with all other types. Since
-this is not currently the case, all accesses to a memory location must
-have a related type.
+exempt--for example, that ``Int8`` (aka ``CChar``) aliases with all
+other types. Since this is not currently the case, all accesses to a
+memory location must have a related type.
 
 
 Layout Compatible Types
