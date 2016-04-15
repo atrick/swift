@@ -60,6 +60,11 @@ Strict Alias Rules
 
 2. Typed pointers to overlapping memory must be related.
 
+As a simple example, consider an address of type ``*Int`` and an
+address of type ``*AnyObject``. Since ``Int`` cannot conform to a
+class protocol, the types are unrelated; therefore, the addresses must
+be disjoint.
+
 Given any two memory accesses, at least of which is a store, that
 exist statically within the same Swift program, if the address
 expressions depend on a value that dynamically violates strict
