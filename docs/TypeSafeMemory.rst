@@ -128,8 +128,8 @@ Layout compatibility is transitive.
 
 .. admonition:: NOTE
 
-   The `proposed resilience document
-   <https://github.com/apple/swift/blob/master/docs/archive/Resilience.rst>`_
+   `Library Evolution Support in Swift
+   <https://github.com/apple/swift/blob/master/docs/LibraryEvolution.rst>`_
    explains the impact of resilience on object layout.
 
 See `Layout Compatible Examples`_
