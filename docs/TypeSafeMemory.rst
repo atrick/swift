@@ -188,10 +188,10 @@ legally as::
 In the future, an API will likely exist to allow legal type
 punning. This could be useful for external APIs that require pointer
 arguments and for manual memory layout. Loads and stores of type
-punned memory would still need to follow the `Layout Compatible Rules`_
-for loads and stores, but would be exempt from the `Strict Alias
-Rules`_. Such an API, for example, would allow accessing same address
-as both ``Int32`` and ``UInt32``.
+punned memory would still need to follow the `Layout Compatible
+Rules`_, but would be exempt from the `Strict Alias Rules`_. Such an
+API, for example, would allow accessing same address as both ``Int32``
+and ``UInt32``.
 
 .. FIXME Reference voidpointer.md once it is a proposal.
 
