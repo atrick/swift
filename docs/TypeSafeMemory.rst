@@ -26,7 +26,7 @@ The program exhibits undefined behavior unless ``T`` and ``U`` are
 `related types`_ and the loaded type ``U`` is **layout compatible**
 with the stored type ``T`` (see `Layout Compatible Types`_).
 
-.. admonition:: NOTE
+.. note::
 
    ``Unsafe[Mutable]Pointer`` is a type safe API. When a program
    accesses memory via ``UnsafePointer``, The ``UnsafePointer``
@@ -65,7 +65,7 @@ exist statically within the same Swift program, if the address
 expressions depend on a value that dynamically violates strict
 aliasing rules, then the program exhibits undefined behavior.
 
-.. admonition:: NOTE
+.. note::
 
    A subtle aspect of this is that generation of an address that
    violates strict aliasing is not in itself undefined behavior. The
@@ -120,13 +120,13 @@ Types are layout compatible, but not mutually so, in the following cases:
 
 Layout compatibility is transitive.
 
-.. admonition:: NOTE
+.. note::
 
    Unrelated class types have no guaranteed heap layout compatibility
    for except for the memory layout within the object's stored
    properties.
 
-.. admonition:: NOTE
+.. note::
 
    `Library Evolution Support in Swift
    <https://github.com/apple/swift/blob/master/docs/LibraryEvolution.rst>`_
