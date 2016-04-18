@@ -28,17 +28,20 @@ with the stored type ``T`` (see `Layout Compatible Types`_).
 
 .. note::
 
-   ``Unsafe[Mutable]Pointer`` is a type safe API. When a program
-   accesses memory via ``UnsafePointer``, The ``UnsafePointer``
-   element should be consistent with the type used to allocate the
-   memory. The "unsafe" in ``UnsafePointer`` actually refers to memory
-   management--it is the user's responsibility to manage the object's
-   lifetime. Type safety is not only a desirable programming model, it
-   is an absolute requirement performance reasons, and ``UnsafePointer``
-   is intended for high-performance implementation of data
-   structures.
+   ``Unsafe[Mutable]Pointer`` needs to provide a type safe API. In
+   other words, when a program accesses memory via ``UnsafePointer``,
+   the ``UnsafePointer`` element should be consistent with the type
+   used to allocate the memory. The "unsafe" in ``UnsafePointer``
+   actually refers to memory management--it is the user's
+   responsibility to manage the object's lifetime. The type safety of
+   UnsafePointer is not only a desirable programming model, it is an
+   absolute requirement performance reasons, as ``UnsafePointer`` is
+   intended for high-performance implementation of data
+   structures. Converting between ``UnsafePointer`` values with
+   different ``Pointee`` types, as shown above, violates this type
+   safety, and will likely be disallowed in future versions of the API.
 
-
+ 
 Related Types
 =============
 
@@ -47,7 +50,7 @@ Two types are related if any of these conditions hold:
 1. the types may be identical or aliases of each other
 2. one type may be a tuple, enum, or struct that contains the other
    type as part of its own storage
-3. one type may be an existential such that a conformance may contain
+3. one type may be an existential such that conforming types may contain
    the other type as part of its own storage
 4. both types may be classes and one may be a superclass of the other
 
