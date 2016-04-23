@@ -134,6 +134,10 @@ Layout compatibility is transitive.
    for except for the memory layout within the object's stored
    properties.
 
+   .. FIXME I think _getUnsafePointerToStoredProperties currently
+      violates this as written. We will need a special attribute for
+      classes that we expect to be laid out a certain way.
+
 .. note::
 
    `Library Evolution Support in Swift`__
