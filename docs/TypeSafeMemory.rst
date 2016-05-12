@@ -106,16 +106,14 @@ some "obvious" cases of mutually layout compatible types are:
   - floating point types of the same size
   - class types and ``AnyObject`` existentials
   - pointer types (e.g. ``OpaquePointer``, ``UnsafePointer``)
-  - thin function, C function, and block function types
+  - block function types and ``AnyObject``
+  - thin function and C function types
   - imported C types that have the same layout in C
-  - nonresilient structs with one stored property and their stored
+  - fragile structs with one stored property and their stored
     property type
-  - nonresilient enums with one case and their payload type
-  - the following are all mutually compatible with each other if they
-    have the same number and type of elements: homogeneous tuples,
-    fixed-sized array storage, and homogeneous nonresilient structs in
-    which the element type has no spare bits (structs may be bit
-    packed).
+  - fragile enums with one case and their payload type
+  - contiguous array storage and homogeneous tuples which 
+    have the same number and type of elements.
 
 Types are layout compatible, but not mutually so, in the following cases:
 
@@ -140,7 +138,8 @@ Layout compatibility is transitive.
 
 .. note::
 
-   `Library Evolution Support in Swift`__
+   "Fragile" enums and structs have strict layout rules that ensure
+   binary compatibility. `Library Evolution Support in Swift`__
    explains the impact of resilience on object layout.
 
 __ https://github.com/apple/swift/blob/master/docs/LibraryEvolution.rst
@@ -152,11 +151,11 @@ Layout Compatible Rules
 
 The following layout rules apply to dynamic memory accesses that occur
 during program execution. In particular, they apply to access that
-originates from stored property getter and setters, reading from and
-assigning into ``inout`` variables, and reading or assigning subscripts
-(including the ``Unsafe[Mutable]Pointer`` ``pointee`` property and
-subscripts). Aggregate loads and stores can be considered a sequence of
-loads and stores of named or indexed elements.
+originates from stored property getter and setters, and reading or
+assigning subscripts (including the ``Unsafe[Mutable]Pointer``
+``pointee`` property and subscripts). Aggregate loads and stores can
+be considered a sequence of loads and stores of named or indexed
+elements.
 
 1. Address formation: Given any two accesses to the same memory
    object, the relationship between their address expressions must be
@@ -213,14 +212,13 @@ Casting Pointers
 
 .. FIXME Reference this from SIL.rst, Class TBAA
 
-``unsafeBitCast`` should generally be avoided on pointer types, and should
-almost exclusively be avoided on class types. ``unsafeBitCast`` is valid
-for pointer to integer conversions. It is also used internally to
-convert between nondereferenceable pointer types, which avoids the
-need to add builtin conversions for all combinations of pointer
-types. As with any conversion to and from opaque pointers, this
-presents an opportunity for type punning, so must be used with extreme
-caution to avoid undefined behavior.
+``unsafeBitCast`` should generally be avoided on pointer types,
+particularly class types. For pointer to integer conversions,
+``bitPattern`` initializers are available in both
+directions. ``unsafeBitCast`` may be used to convert between
+nondereferenceable pointer types, but as with any conversion to and
+from opaque pointers, this presents an opportunity for type punning
+when converting back to a dereferenceable pointer type.
 
 ``unsafeBitCast`` is even more problematic for class types. First, layout
 needs to be considered when ``Optional`` or existential class types are
@@ -252,7 +250,7 @@ This program exhibits undefined behavior for two reasons. First, it
 violates `Strict Alias Rules`_ (#1) because the same memory object may
 be accessed via unrelated class types. Second, it violates `Layout
 Compatible Rules`_ (#1) because there is no guarantee of layout among
-unrelated classes even if they are nonresilient.
+unrelated classes even if they are fragile.
 
 Pointer Casting Example
 -----------------------
