@@ -129,6 +129,7 @@ set(SWIFTLIB_ESSENTIAL
   Unmanaged.swift
   UnsafeBitMap.swift
   UnsafeBufferPointer.swift.gyb
+  UnsafeBytes.swift.gyb
   UnsafePointer.swift.gyb
   UnsafeRawPointer.swift.gyb
   WriteBackMutableSlice.swift
