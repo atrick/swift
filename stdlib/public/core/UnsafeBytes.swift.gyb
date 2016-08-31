@@ -187,6 +187,18 @@ public struct Unsafe${Mutable}Bytes
     baseAddress?.copyBytes(from: source.baseAddress!, count: source.count)
   }
 
+  /// Copies from a collection of `UInt8` into memory at `self`.
+  ///
+  /// - Precondition: `source.count <= self.count`.
+  ///
+  /// - Precondition: If the memory at `self..<self+count` is bound to
+  ///   a type `U`, then `U` is a trivial type, the underlying pointer
+  ///   at `self` is properly aligned for type `U`, and `source.count`
+  ///   is a multiple of `MemoryLayout<U>.stride`.
+  ///
+  /// - Postcondition: The memory at `self..<self+count` is
+  ///   initialized to raw bytes. If the memory is bound to type `U`,
+  ///   then it contains values of type `U`.
   public func copyBytes<C : Collection>(from source: C
   ) where C.Iterator.Element == UInt8 {
     _precondition(numericCast(source.count) <= self.count,
