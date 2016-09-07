@@ -1,4 +1,4 @@
-//===--- UnsafeBytes.swift.gyb --------------------------------*- swift -*-===//
+//===--- UnsafeRawBufferPointer.swift.gyb --------------------*- swift -*-===//
 //
 // This source file is part of the Swift.org open source project
 //
@@ -13,14 +13,14 @@
 %import gyb
 
 % for mutable in (True, False):
-%  Self = 'UnsafeMutableBytes' if mutable else 'UnsafeBytes'
+%  Self = 'UnsafeMutableRawBufferPointer' if mutable else 'UnsafeRawBufferPointer'
 %  Mutable = 'Mutable' if mutable else ''
 
 /// A non-owning view over a region of memory as a Collection of bytes
 /// independent of the type of values held in that memory. Each 8-bit byte in
 /// memory is viewed as a `UInt8` value.
 ///
-/// Reads and writes on memory via `UnsafeBytes` are untyped
+/// Reads and writes on memory via `UnsafeRawBufferPointer` are untyped
 /// operations. Accessing this Collection's bytes does not bind the
 /// underlying memory to `UInt8`. The underlying memory must be bound
 /// to some trivial type whenever it is accessed via a typed operation.
@@ -69,7 +69,7 @@
 %  end
 /// TODO: Specialize `index` and `formIndex` and
 /// `_failEarlyRangeCheck` as in `UnsafeBufferPointer`.
-public struct Unsafe${Mutable}Bytes
+public struct Unsafe${Mutable}RawBufferPointer
   : ${Mutable}Collection, RandomAccessCollection {
 
   public typealias Index = Int
@@ -98,8 +98,8 @@ public struct Unsafe${Mutable}Bytes
   /// Allocate memory for `size` bytes with word alignment.
   ///
   /// - Postcondition: The memory is allocated, but not initialized.
-  public static func allocate(count size: Int) -> UnsafeMutableBytes {
-    return UnsafeMutableBytes(
+  public static func allocate(count size: Int) -> UnsafeMutableRawBufferPointer {
+    return UnsafeMutableRawBufferPointer(
       start: UnsafeMutableRawPointer.allocate(
         bytes: size, alignedTo: MemoryLayout<UInt>.alignment),
       count: size)
@@ -181,7 +181,7 @@ public struct Unsafe${Mutable}Bytes
   /// - Postcondition: The memory at `self..<self+count` is
   ///   initialized to raw bytes. If the memory is bound to type `U`,
   ///   then it contains values of type `U`.
-  public func copyBytes(from source: UnsafeBytes) {
+  public func copyBytes(from source: UnsafeRawBufferPointer) {
     _precondition(source.count <= self.count,
       "${Self}.copyBytes source has too many elements")
     baseAddress?.copyBytes(from: source.baseAddress!, count: source.count)
@@ -234,14 +234,14 @@ public struct Unsafe${Mutable}Bytes
   }
 
 %  if mutable:
-  /// Converts UnsafeBytes to UnsafeMutableBytes.
-  public init(mutating bytes: UnsafeBytes) {
+  /// Converts UnsafeRawBufferPointer to UnsafeMutableRawBufferPointer.
+  public init(mutating bytes: UnsafeRawBufferPointer) {
     self.init(start: UnsafeMutableRawPointer(mutating: bytes.baseAddress),
       count: bytes.count)
   }
 %  else:
-  /// Converts UnsafeMutableBytes to UnsafeBytes.
-  public init(_ bytes: UnsafeMutableBytes) {
+  /// Converts UnsafeMutableRawBufferPointer to UnsafeRawBufferPointer.
+  public init(_ bytes: UnsafeMutableRawBufferPointer) {
     self.init(start: bytes.baseAddress, count: bytes.count)
   }
 
@@ -263,8 +263,8 @@ public struct Unsafe${Mutable}Bytes
   /// The "past the end" position---that is, the position one greater than the
   /// last valid subscript argument.
   ///
-  /// The `endIndex` property of an `Unsafe${Mutable}Bytes` instance is
-  /// always identical to `count`.
+  /// The `endIndex` property of an `Unsafe${Mutable}RawBufferPointer`
+  /// instance is always identical to `count`.
   public var endIndex: Int {
     return count
   }
@@ -293,11 +293,11 @@ public struct Unsafe${Mutable}Bytes
 
   /// Accesses the bytes in the memory region within `bounds` as a `UInt8`
   /// values.
-  public subscript(bounds: Range<Int>) -> Unsafe${Mutable}Bytes {
+  public subscript(bounds: Range<Int>) -> Unsafe${Mutable}RawBufferPointer {
     get {
       _debugPrecondition(bounds.lowerBound >= startIndex)
       _debugPrecondition(bounds.upperBound <= endIndex)
-      return Unsafe${Mutable}Bytes(
+      return Unsafe${Mutable}RawBufferPointer(
         start: baseAddress.map { $0 + bounds.lowerBound },
         count: bounds.count)
     }
@@ -339,7 +339,7 @@ public struct Unsafe${Mutable}Bytes
   let _position, _end: Unsafe${Mutable}RawPointer?
 }
 
-extension Unsafe${Mutable}Bytes : CustomDebugStringConvertible {
+extension Unsafe${Mutable}RawBufferPointer : CustomDebugStringConvertible {
   /// A textual representation of `self`, suitable for debugging.
   public var debugDescription: String {
     return "${Self}"
@@ -352,22 +352,22 @@ extension Unsafe${Mutable}Bytes : CustomDebugStringConvertible {
 %  if mutable:
 public func withUnsafeMutableBytes<T, Result>(
   of arg: inout T,
-  _ body: (inout UnsafeMutableBytes) throws -> Result
+  _ body: (inout UnsafeMutableRawBufferPointer) throws -> Result
 ) rethrows -> Result
 {
   return try withUnsafeMutablePointer(to: &arg) {
-    var bytes = UnsafeMutableBytes(start: $0, count: MemoryLayout<T>.size)
+    var bytes = UnsafeMutableRawBufferPointer(start: $0, count: MemoryLayout<T>.size)
     return try body(&bytes)
   }
 }
 %  else:
 public func withUnsafeBytes<T, Result>(
   of arg: inout T,
-  _ body: (UnsafeBytes) throws -> Result
+  _ body: (UnsafeRawBufferPointer) throws -> Result
 ) rethrows -> Result
 {
   return try withUnsafePointer(to: &arg) {
-    try body(UnsafeBytes(start: $0, count: MemoryLayout<T>.size))
+    try body(UnsafeRawBufferPointer(start: $0, count: MemoryLayout<T>.size))
   }
 }
 %  end # mutable

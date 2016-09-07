@@ -2126,24 +2126,25 @@ extension ${Self} {
   ///      }
   ///    }
   ///
-  /// - Parameter body: A closure with an `UnsafeBytes` parameter that points to
-  /// the contiguous storage for the array. If `body` has a return value, it is
-  /// used as the return value for the `withUnsafeBytes(_:)` method. The
-  /// argument is valid only for the duration of the closure's execution.
+  /// - Parameter body: A closure with an `UnsafeRawBufferPointer` parameter
+  ///   that points to the contiguous storage for the array. If `body` has a
+  ///   return value, it is used as the return value for the
+  ///   `withUnsafeBytes(_:)` method. The argument is valid only for the
+  ///   duration of the closure's execution.
   /// - Returns: The return value of the `body` closure parameter, if any.
   ///
-  /// - SeeAlso: `withUnsafeBytes`, `UnsafeBytes`
+  /// - SeeAlso: `withUnsafeBytes`, `UnsafeMutableRawBufferPointer`
   public mutating func withUnsafeMutableBytes<R>(
-    _ body: (inout UnsafeMutableBytes) throws -> R
+    _ body: (inout UnsafeMutableRawBufferPointer) throws -> R
   ) rethrows -> R {
     return try self.withUnsafeMutableBufferPointer {
-      var bytes = UnsafeMutableBytes($0)
+      var bytes = UnsafeMutableRawBufferPointer($0)
       return try body(&bytes)
     }
   }
 
-  /// Calls a closure with a view of the array's underlying bytes of memory as a
-  /// Collection of `UInt8`.
+  /// Calls a closure with a view of the array's underlying bytes of memory
+  /// as a Collection of `UInt8`.
   /// ${contiguousCaveat}
   ///
   /// - Precondition: `Pointee` is a trivial type.
@@ -2157,18 +2158,19 @@ extension ${Self} {
   ///        byteBuffer += $0
   ///    }
   ///
-  /// - Parameter body: A closure with an `UnsafeBytes` parameter that points to
-  /// the contiguous storage for the array. If `body` has a return value, it is
-  /// used as the return value for the `withUnsafeBytes(_:)` method. The
-  /// argument is valid only for the duration of the closure's execution.
+  /// - Parameter body: A closure with an `UnsafeRawBufferPointer` parameter
+  ///   that points to the contiguous storage for the array. If `body` has a
+  ///   return value, it is used as the return value for the
+  ///   `withUnsafeBytes(_:)` method. The argument is valid only for the
+  ///   duration of the closure's execution.
   /// - Returns: The return value of the `body` closure parameter, if any.
   ///
-  /// - SeeAlso: `withUnsafeBytes`, `UnsafeBytes`
+  /// - SeeAlso: `withUnsafeBytes`, `UnsafeRawBufferPointer`
   public mutating func withUnsafeBytes<R>(
-    _ body: (UnsafeBytes) throws -> R
+    _ body: (UnsafeRawBufferPointer) throws -> R
   ) rethrows -> R {
     return try self.withUnsafeBufferPointer {
-      try body(UnsafeBytes($0))
+      try body(UnsafeRawBufferPointer($0))
     }
   }
 }

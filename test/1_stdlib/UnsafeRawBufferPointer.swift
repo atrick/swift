@@ -3,9 +3,9 @@
 
 import StdlibUnittest
 
-var UnsafeBytesTestSuite = TestSuite("UnsafeBytes")
+var UnsafeRawBufferPointerTestSuite = TestSuite("UnsafeRawBufferPointer")
 
-UnsafeBytesTestSuite.test("initFromValue") {
+UnsafeRawBufferPointerTestSuite.test("initFromValue") {
   var value1: Int32 = -1
   var value2: Int32 = 0
   // Immutable view of value1's bytes.
@@ -23,7 +23,7 @@ UnsafeBytesTestSuite.test("initFromValue") {
   expectEqual(value2, value1)
 }
 
-UnsafeBytesTestSuite.test("initFromArray") {
+UnsafeRawBufferPointerTestSuite.test("initFromArray") {
   var array1: [Int32] = [0, 1, 2, 3]
   var array2 = [Int32](repeating: 0, count: 4)
   // Immutable view of array1's bytes.
@@ -46,24 +46,24 @@ UnsafeBytesTestSuite.test("initFromArray") {
   expectEqual(array2, array1)
 }
 
-UnsafeBytesTestSuite.test("Collection") {
-  expectCollectionType(UnsafeBytes.self)
-  expectMutableCollectionType(UnsafeMutableBytes.self)
-  expectSliceType(UnsafeBytes.self)
-  expectMutableSliceType(UnsafeMutableBytes.self)
+UnsafeRawBufferPointerTestSuite.test("Collection") {
+  expectCollectionType(UnsafeRawBufferPointer.self)
+  expectMutableCollectionType(UnsafeMutableRawBufferPointer.self)
+  expectSliceType(UnsafeRawBufferPointer.self)
+  expectMutableSliceType(UnsafeMutableRawBufferPointer.self)
 
   expectCollectionAssociatedTypes(
-    collectionType: UnsafeBytes.self,
-    iteratorType: UnsafeBytes.Iterator.self,
-    subSequenceType: UnsafeBytes.self,
+    collectionType: UnsafeRawBufferPointer.self,
+    iteratorType: UnsafeRawBufferPointer.Iterator.self,
+    subSequenceType: UnsafeRawBufferPointer.self,
     indexType: Int.self,
     indexDistanceType: Int.self,
     indicesType: CountableRange<Int>.self)
 
   expectCollectionAssociatedTypes(
-    collectionType: UnsafeMutableBytes.self,
-    iteratorType: UnsafeMutableBytes.Iterator.self,
-    subSequenceType: UnsafeMutableBytes.self,
+    collectionType: UnsafeMutableRawBufferPointer.self,
+    iteratorType: UnsafeMutableRawBufferPointer.Iterator.self,
+    subSequenceType: UnsafeMutableRawBufferPointer.self,
     indexType: Int.self,
     indexDistanceType: Int.self,
     indicesType: CountableRange<Int>.self)
@@ -78,13 +78,13 @@ UnsafeBytesTestSuite.test("Collection") {
   }
 }
 
-UnsafeBytesTestSuite.test("reinterpret") {
+UnsafeRawBufferPointerTestSuite.test("reinterpret") {
   struct Pair {
     var x: Int32
     var y: Int32
   }
   let numPairs = 2
-  let bytes = UnsafeMutableBytes.allocate(
+  let bytes = UnsafeMutableRawBufferPointer.allocate(
     count: MemoryLayout<Pair>.stride * numPairs)
   defer { bytes.deallocate() }  
 
@@ -110,9 +110,9 @@ UnsafeBytesTestSuite.test("reinterpret") {
   }
 }
 
-UnsafeBytesTestSuite.test("inBounds") {
+UnsafeRawBufferPointerTestSuite.test("inBounds") {
   let numInts = 4
-  let bytes = UnsafeMutableBytes.allocate(
+  let bytes = UnsafeMutableRawBufferPointer.allocate(
     count: MemoryLayout<Int>.stride * numInts)
   defer { bytes.deallocate() }
 
@@ -132,27 +132,27 @@ UnsafeBytesTestSuite.test("inBounds") {
   expectEqualSequence(firstHalf, secondHalf)
 }
 
-UnsafeBytesTestSuite.test("subscript.underflow") {
+UnsafeRawBufferPointerTestSuite.test("subscript.underflow") {
   if _isDebugAssertConfiguration() {
     expectCrashLater()
   }
-  let bytes = UnsafeMutableBytes.allocate(count: 2)
+  let bytes = UnsafeMutableRawBufferPointer.allocate(count: 2)
   defer { bytes.deallocate() }
 
   bytes[-1] = 0
 }
 
-UnsafeBytesTestSuite.test("subscript.overflow") {
+UnsafeRawBufferPointerTestSuite.test("subscript.overflow") {
   if _isDebugAssertConfiguration() {
     expectCrashLater()
   }
-  let bytes = UnsafeMutableBytes.allocate(count: 2)
+  let bytes = UnsafeMutableRawBufferPointer.allocate(count: 2)
   defer { bytes.deallocate() }
 
   bytes[2] = 0
 }
 
-UnsafeBytesTestSuite.test("load.before") {
+UnsafeRawBufferPointerTestSuite.test("load.before") {
   if _isDebugAssertConfiguration() {
     expectCrashLater()
   }
@@ -161,7 +161,7 @@ UnsafeBytesTestSuite.test("load.before") {
     _ = $0.load(fromByteOffset: -1, as: UInt8.self)
   }
 }
-UnsafeBytesTestSuite.test("load.after") {
+UnsafeRawBufferPointerTestSuite.test("load.after") {
   if _isDebugAssertConfiguration() {
     expectCrashLater()
   }
@@ -171,7 +171,7 @@ UnsafeBytesTestSuite.test("load.after") {
   }
 }
 
-UnsafeBytesTestSuite.test("store.before") {
+UnsafeRawBufferPointerTestSuite.test("store.before") {
   if _isDebugAssertConfiguration() {
     expectCrashLater()
   }
@@ -180,7 +180,7 @@ UnsafeBytesTestSuite.test("store.before") {
     $0.storeBytes(of: UInt8(0), toByteOffset: -1, as: UInt8.self)
   }
 }
-UnsafeBytesTestSuite.test("store.after") {
+UnsafeRawBufferPointerTestSuite.test("store.after") {
   if _isDebugAssertConfiguration() {
     expectCrashLater()
   }
@@ -190,30 +190,30 @@ UnsafeBytesTestSuite.test("store.after") {
   }
 }
 
-UnsafeBytesTestSuite.test("copy.bytes.overflow") {
+UnsafeRawBufferPointerTestSuite.test("copy.bytes.overflow") {
   expectCrashLater()
   var x: Int64 = 0
   var y: Int32 = 0
   withUnsafeBytes(of: &x) { srcBytes in
     withUnsafeMutableBytes(of: &y) { destBytes in
-      destBytes.copyBytes(from: UnsafeMutableBytes(mutating: srcBytes))
+      destBytes.copyBytes(from: UnsafeMutableRawBufferPointer(mutating: srcBytes))
     }
   }
 }
 
-UnsafeBytesTestSuite.test("copy.sequence.overflow") {
+UnsafeRawBufferPointerTestSuite.test("copy.sequence.overflow") {
   expectCrashLater()
   var x: Int64 = 0
   var y: Int32 = 0
   withUnsafeBytes(of: &x) { srcBytes in
-    withUnsafeMutableBytes(of: &y) { destBytes in
+    withUnsafeMutableRawBufferPointer(of: &y) { destBytes in
       destBytes.copyBytes(from: srcBytes)
     }
   }
 }
 
-UnsafeBytesTestSuite.test("copy.overlap") {
-  var bytes = UnsafeMutableBytes.allocate(count: 4)
+UnsafeRawBufferPointerTestSuite.test("copy.overlap") {
+  var bytes = UnsafeMutableRawBufferPointer.allocate(count: 4)
   // Right Overlap
   bytes[0] = 1
   bytes[1] = 2
