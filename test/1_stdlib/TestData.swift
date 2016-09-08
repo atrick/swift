@@ -128,10 +128,8 @@ class TestData : TestDataSuper {
     func dataFrom(_ string : String) -> Data {
         // Create a Data out of those bytes
         return string.utf8CString.withUnsafeBufferPointer { (ptr) in
-            ptr.baseAddress!.withMemoryRebound(to: UInt8.self, capacity: ptr.count) {
-                // Subtract 1 so we don't get the null terminator byte. This matches NSString behavior.
-                return Data(bytes: $0, count: ptr.count - 1)
-            }
+            // Subtract 1 so we don't get the null terminator byte. This matches NSString behavior.
+            return Data(bytes: ptr.baseAddress!, count: ptr.count - 1)
         }
     }
     
@@ -154,7 +152,29 @@ class TestData : TestDataSuper {
         expectEqual(hello.count, helloLength, "Length of first data should not have changed")
         expectEqual(helloWorld.count, hello.count + world.count, "The total length should include both buffers")
     }
-    
+
+    func testUnsafeRawBufferPointer() {
+        var x = UInt64(littleEndian: 0x0000000200000001)
+        var data = withUnsafeBytes(of: &x) {
+            Data($0)
+        }
+        data.withUnsafeBytes() { (rawBuf: UnsafeRawBufferPointer) in
+            expectEqual(0x1, rawBuf.load(as: UInt32.self))
+            expectEqual(0x2, rawBuf.load(fromByteOffset: 4, as: UInt32.self))
+        }
+        defer { _fixLifetime(data)}
+        data.withUnsafeMutableBytes() {
+            var mdata = Data(bytesNoCopy: $0, deallocator: .none)
+            mdata.withUnsafeMutableBytes() { (rawBuf: UnsafeMutableRawBufferPointer) in
+                rawBuf.storeBytes(of: UInt64(littleEndian: 0x0000000400000003), as: UInt64.self)
+            }
+        }
+        data.withUnsafeBytes() { (rawBuf: UnsafeRawBufferPointer) in
+            expectEqual(0x3, rawBuf.load(as: UInt32.self))
+            expectEqual(0x4, rawBuf.load(fromByteOffset: 4, as: UInt32.self))
+        }
+    }
+
     func testInitializationWithArray() {
         let data = Data(bytes: [1, 2, 3])
         expectEqual(3, data.count)

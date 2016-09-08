@@ -360,6 +360,15 @@ public func withUnsafeMutableBytes<T, Result>(
     return try body(&bytes)
   }
 }
+// FIXME: workaround for rdar:26058520: Generic type constraints incorrectly applied to functions with the same name
+@_transparent
+public func _withUnsafeMutableBytes<T, Result>(
+  of arg: inout T,
+  _ body: (inout UnsafeMutableRawBufferPointer) throws -> Result
+) rethrows -> Result
+{
+  return try withUnsafeMutableBytes(of: &arg, body)
+}
 %  else:
 public func withUnsafeBytes<T, Result>(
   of arg: inout T,
@@ -369,6 +378,16 @@ public func withUnsafeBytes<T, Result>(
   return try withUnsafePointer(to: &arg) {
     try body(UnsafeRawBufferPointer(start: $0, count: MemoryLayout<T>.size))
   }
+}
+
+// FIXME: workaround for rdar:26058520: Generic type constraints incorrectly applied to functions with the same name
+@_transparent
+public func _withUnsafeBytes<T, Result>(
+  of arg: inout T,
+  _ body: (UnsafeRawBufferPointer) throws -> Result
+) rethrows -> Result
+{
+  return try withUnsafeBytes(of: &arg, body)
 }
 %  end # mutable
 
