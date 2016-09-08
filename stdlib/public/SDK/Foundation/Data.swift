@@ -700,9 +700,7 @@ public struct Data : ReferenceConvertible, Equatable, Hashable, RandomAccessColl
     /// Sets or returns the byte at the specified index. 
     public subscript(index: Index) -> UInt8 {
         get {
-            var result : UInt8 = 0
-            copyBytes(to: &result, from: (index ..< index + 1))
-            return result
+            return copyBytes(at: index, as: UInt8.self)
         }
         set {
             let range = NSMakeRange(index, 1)
@@ -781,7 +779,47 @@ public struct Data : ReferenceConvertible, Equatable, Hashable, RandomAccessColl
             }
         }
     }
-    
+
+    // MARK: - Proposed additions
+
+    /// Append a value to the data.
+    ///
+    /// - parameter value: A value whose bytes will be copied into the data.
+    /// !!!TEST
+    public mutating func append<SourceType>(_ value: SourceType) {
+        var value = value
+        _withUnsafeBytes(of: &value) {
+            append($0)
+        }
+    }
+
+    /// Replace a region of bytes in the data with new bytes from a value.
+    ///
+    /// This will resize the data if required, to fit the entire contents of `value`.
+    ///
+    /// - precondition: The bounds of `subrange` must be valid indices of the collection.
+    /// - parameter subrange: The range in the data to replace.
+    /// - parameter value: The replacement value.
+    /// !!!TEST
+    public mutating func replaceSubrange<SourceType>(_ subrange: Range<Index>, with value: SourceType) {
+        var value = value
+        _withUnsafeBytes(of: &value) {
+            replaceSubrange(subrange, with: $0)
+        }
+    }
+
+    /// Copy the bytes at `index` into a value of `DestinationType` and return the value.
+    ///
+    /// - parameter index: The byte offset in data of the first byte to copy.
+    /// - parameter type: The type of value to copy into.
+    /// !!!TEST
+    public func copyBytes<ResultType>(at index: Index, as type: ResultType.Type) -> ResultType {
+        //!!! bounds checks
+        return self.withUnsafeBytes {
+            $0.load(fromByteOffset: index, as: type)
+        }
+    }
+
     // MARK: -
     //
     
