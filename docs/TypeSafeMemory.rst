@@ -4,8 +4,6 @@
 Type Safe Memory Access
 =======================
 
-This is work-in-progress, not an official language specification.
-
 .. contents:: :local:
    
 Introduction
@@ -296,8 +294,8 @@ The following code is both legal and more explicit::
     return obj.getVal()
   }
 
-Examples
-========
+Examples of Semantics
+=====================
 
 Related Type Examples
 ---------------------
@@ -488,3 +486,25 @@ take invalidly formed addresses::
     }
     mcompatible(&c.i, &getStructPointer(&c.i).pointee)
   }
+
+Examples of Optimization
+========================
+
+*Reinitialization of Raw Memory*
+
+The optimizer cannot hoist pB[i] in this example even though the
+'opaque' call only operates an an unrelated type (A). Although the
+memory is locally allocated when it is initialized to pA, it
+effectively escapes from the point of view of pB. That means anything can happen to that memory within the 'opaque' call::
+
+  let rawPtr = UnsafeMutableRawPointer(allocatingCapacity: n, of: T.self)
+  let pA = rawPtr.initialize(A.self, with: A())
+
+  // Forming a pointer to an incorrect type is legal.
+  let pB = rawPtr.toType(B.self)
+
+  // This opaque call may deinitialize pA, an reinitialize the memory to B
+  opaque(pA)
+
+  // This access is legal but cannot be hoisted.
+  pB[i]
