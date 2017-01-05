@@ -492,7 +492,7 @@ public struct Data : ReferenceConvertible, Equatable, Hashable, RandomAccessColl
     ///
     /// In some cases, (for example, a `Data` backed by a `dispatch_data_t`, the bytes may be stored discontiguously. In those cases, this function invokes the closure for each contiguous region of bytes.
     /// - parameter block: The closure to invoke for each region of data. You may stop the enumeration by setting the `stop` parameter to `true`.
-    /// - warning: This method is deprecated because it binds data's underlying memory to UInt8. This is unsafe if 
+    /// - warning: This method is deprecated because it binds data's underlying memory to UInt8. This is unsafe if Data does not have its own copy of the memory (it was initialized with `bytesNoCopy`), and other code accesses the same memory as a different type.
     @available(*, deprecated, message: "Use enumerateBytes() with a closure that takes UnsafeMutableRawBufferPointer instead")
     public func enumerateBytes(_ block: (_ buffer: UnsafeBufferPointer<UInt8>, _ byteIndex: Index, _ stop: inout Bool) -> Void) {
         _mapUnmanaged {
