@@ -61,56 +61,58 @@ namespace {
 // For each capture value that can locally be promoted to a non-capture,
 // indicate the constraints on the closed over (non-captured) value.
 //
-// This applies locally to no-escape closure captures. Further global analysis
-// may be needed determine whether it is actually safe to promote the
-// capture. If a variable is captured by any closure, all closures must access
-// the variable through its box.
+// This applies to no-escape closure captures. The initial capture flag may be
+// optimistic based on local closure analysis. Further global analysis may
+// remove captured values from the promotable set. In particular, if any closure
+// captures a variable, then all closures must access the variable through its
+// box.
 //
-// If the closed over value is read-only within the closure and not mutated
-// between the capture and apply, then it can be promoted as `Value`.
-// TODO: This is artificially limited. Anything that is read-only and could be
-// promoted to `ReadOnlyAddress` could also be promoted to `Value`. The load
-// simply needs to occur at the use points (applies of the no-escape closure).
+// If the closed over variable is read-only within the closure and not mutated
+// between the capture and apply, then it may be promoted `ByValue`.
+// 
+// Even if it is read-only within the closure, the closed over variable cannot
+// be `ByValue` if it is mutated between the capture and apply, or simply
+// requires a by-address convention for any other reason.
 //
-// If the closed over value is read-only within the closure, but either
-// potentially mutated between the capture and apply, or requires a by-address
-// convention for any other reason, then it can be promoted as
-// `ReadOnlyAddress`.
-//
-// If the closed over value is modified within the closure, then at can be
-// promoted as `Mutating`.
-enum PromotedCaptureKind {
-  Value,
-  ReadOnlyAddress,
-  Mutating,
-  LastKind = Mutating
+// TODO: This is artificially conservative. Anything that is read-only could be
+// promoted to `Value`. The load simply needs to occur at the use points
+// (applies of the no-escape closure). Once SIL opaque values are enabled and
+// exclusivity is enforced, address-only types will also be considered captured
+// by `Value` and will be passed as `@in` arguments. So only variables that are
+// mutated within the closure will not be marked `ByValue`.
+enum PromotedCaptureFlags {
+  None    = 0x0,
+  ByValue = 0x1,
+  Mask    = 0x1
 };
 
-// Identify a promotable capture by its argument index and PromotedCaptureKind.
+// Identify a promotable capture by its argument index and PromotedCaptureFlags.
 //
 // The promotable argument index corresponds to the closure function's argument
 // index: (num indirect results + param index).
 class PromotedCaptureArg {
-  static const KindBits = 2;
-  enum : unsigned { KindMask = (1 << KindBits) - 1; ArgIndexMask = ~KindMask; };
-  static_assert(PromotedCaptureKind::LastKind <= KindMask);
+  static const unsigned ArgIndexMask = ~PromotedCaptureFlags::Mask;
+  static const int FlagBits = 1;
+  static_assert((1 << FlagBits) - 1 == PromotedCaptureFlags::Mask);
 
   unsigned ArgIndexAndKind;
 
 public:
-  PromotedCaptureArg(PromotedCaptureKind kind, unsigned idx) {
+  PromotedCaptureArg(PromotedCaptureFlags flags, unsigned idx) {
     unsigned shiftedIdx = idx << KindBits;
-    assert(shiftedIdx == idx);
-    ArgIndexAndKind = kind | shiftedIdx;
+    assert((shiftedIdx >> FlagBits) == idx);
+    ArgIndexAndKind = flags | shiftedIdx;
   }
 
-  unsigned getArgIndex() const { return ArgIndexAndKind & ArgIndexMask; }
+  unsigned getArgIndex() const { return ArgIndexAndKind >> FlagBits; }
 
-  PromotedCaptureKind getKind() const { return ArgIndexAndKind & KindMask; }
+  PromotedCaptureKind getKind() const {
+    return ArgIndexAndKind & PromotedCaptureFlags::Mask;
+  }
 };
 }
 
-typedef llvm::SmallSet<PromotedCaptureKind, 4> IndicesSet;
+typedef llvm::SmallSet<PromotedCaptureArg, 4> IndicesSet;
 typedef llvm::DenseMap<PartialApplyInst*, IndicesSet> PartialApplyIndicesMap;
 
 STATISTIC(NumCapturesPromoted, "Number of captures promoted");
