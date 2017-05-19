@@ -754,10 +754,20 @@ isNonMutatingCapture(SILArgument *BoxArg) {
 
 namespace {
 
+// Helper visitor for isNonEscapingUse().
+// 
+// Visits all uses of an some operand representing a box or its value.
+// 
+// The source of the operand is expected to be either AllocBox, transitive
+// CopyValue's of an AllocBox, or ProjectBox.
 class NonEscapingUserVisitor
     : public SILInstructionVisitor<NonEscapingUserVisitor, bool> {
-  llvm::SmallVector<Operand *, 32> Worklist;
+
+  // Record all recognizable mutations of the boxed value.
   llvm::SmallVectorImpl<SILInstruction *> &Mutations;
+
+  // Transient helpers.
+  llvm::SmallVector<Operand *, 32> Worklist;
   NullablePtr<Operand> CurrentOp;
 
 public:
@@ -772,6 +782,8 @@ public:
   NonEscapingUserVisitor(NonEscapingUserVisitor &&) = delete;
   NonEscapingUserVisitor &operator=(NonEscapingUserVisitor &&) = delete;
 
+  // Return `true` if all uses are either benign pass-thru operations or
+  // recognized mutating operations, which will be added to `Mutations`.
   bool compute() {
     while (!Worklist.empty()) {
       CurrentOp = Worklist.pop_back_val();
@@ -783,11 +795,8 @@ public:
 
       // Then visit the specific user. This routine returns true if the value
       // does not escape. In such a case, continue.
-      if (visit(User)) {
-        continue;
-      }
-
-      return false;
+      if (!visit(User)) {
+        return false;
     }
 
     return true;
