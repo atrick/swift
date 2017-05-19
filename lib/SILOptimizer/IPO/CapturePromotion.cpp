@@ -62,6 +62,14 @@ typedef llvm::DenseMap<PartialApplyInst*, IndicesSet> PartialApplyIndicesMap;
 
 STATISTIC(NumCapturesPromoted, "Number of captures promoted");
 
+//===----------------------------------------------------------------------===//
+// Basic Block Reachability Analysis
+//
+// A useful utility, but likely overkill for this pass. Once the rules for
+// capture promotion are refined to treat the applies as the use points, we
+// should no longer care about reachability.
+//===----------------------------------------------------------------------===//
+
 namespace {
 /// \brief Transient reference to a block set within ReachabilityInfo.
 ///
@@ -187,47 +195,6 @@ private:
 
 } // end anonymous namespace
 
-
-namespace {
-/// \brief A SILCloner subclass which clones a closure function while converting
-/// one or more captures from 'inout' (by-reference) to by-value.
-class ClosureCloner : public SILClonerWithScopes<ClosureCloner> {
-public:
-  friend class SILVisitor<ClosureCloner>;
-  friend class SILCloner<ClosureCloner>;
-
-  ClosureCloner(SILFunction *Orig, IsSerialized_t Serialized,
-                StringRef ClonedName,
-                IndicesSet &PromotableIndices);
-
-  void populateCloned();
-
-  SILFunction *getCloned() { return &getBuilder().getFunction(); }
-
-private:
-  static SILFunction *initCloned(SILFunction *Orig, IsSerialized_t Serialized,
-                                 StringRef ClonedName,
-                                 IndicesSet &PromotableIndices);
-
-  SILValue getProjectBoxMappedVal(SILValue Operand);
-
-  void visitDebugValueAddrInst(DebugValueAddrInst *Inst);
-  void visitStrongReleaseInst(StrongReleaseInst *Inst);
-  void visitDestroyValueInst(DestroyValueInst *Inst);
-  void visitStructElementAddrInst(StructElementAddrInst *Inst);
-  void visitLoadInst(LoadInst *Inst);
-  void visitLoadBorrowInst(LoadBorrowInst *Inst);
-  void visitProjectBoxInst(ProjectBoxInst *Inst);
-  void visitBeginAccessInst(BeginAccessInst *Inst);
-  void visitEndAccessInst(EndAccessInst *Inst);
-
-  SILFunction *Orig;
-  IndicesSet &PromotableIndices;
-  llvm::DenseMap<SILArgument *, SILValue> BoxArgumentMap;
-  llvm::DenseMap<ProjectBoxInst *, SILValue> ProjectBoxArgumentMap;
-};
-} // end anonymous namespace
-
 /// \brief Compute ReachabilityInfo so that it can answer queries about
 /// whether a given basic block in a function is reachable from another basic
 /// block in the function.
@@ -304,6 +271,50 @@ ReachabilityInfo::isReachable(SILBasicBlock *From, SILBasicBlock *To) {
   ReachingBlockSet FromSet(TI->second, Matrix);
   return FromSet.test(FI->second);
 }
+
+//===----------------------------------------------------------------------===//
+// ClosureCloner: Rewrite closure bodies and call sites after promoting
+// arguments.
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// \brief A SILCloner subclass which clones a closure function while converting
+/// one or more captures from 'inout' (by-reference) to by-value.
+class ClosureCloner : public SILClonerWithScopes<ClosureCloner> {
+public:
+  friend class SILVisitor<ClosureCloner>;
+  friend class SILCloner<ClosureCloner>;
+
+  ClosureCloner(SILFunction *Orig, IsSerialized_t Serialized,
+                StringRef ClonedName, IndicesSet &PromotableIndices);
+
+  void populateCloned();
+
+  SILFunction *getCloned() { return &getBuilder().getFunction(); }
+
+private:
+  static SILFunction *initCloned(SILFunction *Orig, IsSerialized_t Serialized,
+                                 StringRef ClonedName,
+                                 IndicesSet &PromotableIndices);
+
+  SILValue getProjectBoxMappedVal(SILValue Operand);
+
+  void visitDebugValueAddrInst(DebugValueAddrInst *Inst);
+  void visitStrongReleaseInst(StrongReleaseInst *Inst);
+  void visitDestroyValueInst(DestroyValueInst *Inst);
+  void visitStructElementAddrInst(StructElementAddrInst *Inst);
+  void visitLoadInst(LoadInst *Inst);
+  void visitLoadBorrowInst(LoadBorrowInst *Inst);
+  void visitProjectBoxInst(ProjectBoxInst *Inst);
+  void visitBeginAccessInst(BeginAccessInst *Inst);
+  void visitEndAccessInst(EndAccessInst *Inst);
+
+  SILFunction *Orig;
+  IndicesSet &PromotableIndices;
+  llvm::DenseMap<SILArgument *, SILValue> BoxArgumentMap;
+  llvm::DenseMap<ProjectBoxInst *, SILValue> ProjectBoxArgumentMap;
+};
+} // end anonymous namespace
 
 ClosureCloner::ClosureCloner(SILFunction *Orig, IsSerialized_t Serialized,
                              StringRef ClonedName,
@@ -687,6 +698,11 @@ void ClosureCloner::visitLoadInst(LoadInst *LI) {
   }
   SILCloner<ClosureCloner>::visitLoadInst(LI);
 }
+
+//===----------------------------------------------------------------------===//
+// AllocBox Analysis: Find promtable captured values and populate a
+// PartialApplyIndicesMap.
+//===----------------------------------------------------------------------===//
 
 static SILArgument *getBoxFromIndex(SILFunction *F, unsigned Index) {
   assert(F->isDefinition() && "Expected definition not external declaration!");
