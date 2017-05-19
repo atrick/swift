@@ -57,7 +57,60 @@
 
 using namespace swift;
 
-typedef llvm::SmallSet<unsigned, 4> IndicesSet;
+namespace {
+// For each capture value that can locally be promoted to a non-capture,
+// indicate the constraints on the closed over (non-captured) value.
+//
+// This applies locally to no-escape closure captures. Further global analysis
+// may be needed determine whether it is actually safe to promote the
+// capture. If a variable is captured by any closure, all closures must access
+// the variable through its box.
+//
+// If the closed over value is read-only within the closure and not mutated
+// between the capture and apply, then it can be promoted as `Value`.
+// TODO: This is artificially limited. Anything that is read-only and could be
+// promoted to `ReadOnlyAddress` could also be promoted to `Value`. The load
+// simply needs to occur at the use points (applies of the no-escape closure).
+//
+// If the closed over value is read-only within the closure, but either
+// potentially mutated between the capture and apply, or requires a by-address
+// convention for any other reason, then it can be promoted as
+// `ReadOnlyAddress`.
+//
+// If the closed over value is modified within the closure, then at can be
+// promoted as `Mutating`.
+enum PromotedCaptureKind {
+  Value,
+  ReadOnlyAddress,
+  Mutating,
+  LastKind = Mutating
+};
+
+// Identify a promotable capture by its argument index and PromotedCaptureKind.
+//
+// The promotable argument index corresponds to the closure function's argument
+// index: (num indirect results + param index).
+class PromotedCaptureArg {
+  static const KindBits = 2;
+  enum : unsigned { KindMask = (1 << KindBits) - 1; ArgIndexMask = ~KindMask; };
+  static_assert(PromotedCaptureKind::LastKind <= KindMask);
+
+  unsigned ArgIndexAndKind;
+
+public:
+  PromotedCaptureArg(PromotedCaptureKind kind, unsigned idx) {
+    unsigned shiftedIdx = idx << KindBits;
+    assert(shiftedIdx == idx);
+    ArgIndexAndKind = kind | shiftedIdx;
+  }
+
+  unsigned getArgIndex() const { return ArgIndexAndKind & ArgIndexMask; }
+
+  PromotedCaptureKind getKind() const { return ArgIndexAndKind & KindMask; }
+};
+}
+
+typedef llvm::SmallSet<PromotedCaptureKind, 4> IndicesSet;
 typedef llvm::DenseMap<PartialApplyInst*, IndicesSet> PartialApplyIndicesMap;
 
 STATISTIC(NumCapturesPromoted, "Number of captures promoted");
