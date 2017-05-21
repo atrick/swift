@@ -67,16 +67,27 @@
 using namespace swift;
 
 namespace {
-// Here "capture value" refers to closed over variable, which in SIL looks like
-// a box-type partial apply argument. For each capture value that can
-// potentially be promoted to an unboxed argument, record the properties of the
-// closed over (non-captured) value, which are specific to a single partial
-// apply.
+// Identify a promotable capture value by its argument index and associate it
+// with properties.
+//
+// The index corresponds to the closure function's argument index: (num indirect
+// results + param index).
+// 
+// Here "capture value" refers to closed over variable, which in SIL looks
+// like a box-type partial apply argument. For each capture value that can
+// potentially be promoted to an unboxed argument, record the properties of
+// the closed over (non-captured) value, which are specific to a single
+// partial apply.
 //
 // `Escaping`: The closure that takes this capture value has unknown
 // scope. "noescape" closures will never be `Escaping`. The CapturePromotion
 // pass can further refine a closure's noescape property based on analysis of
 // its uses to be more inclusive than the type system's property.
+//
+// `Mutating`: The closure mutates this capture value.
+//
+// `Exposed`: The capture value is potentially mutated outside this closure
+// during the closure's lifetime.
 //
 // Invariants:
 //
@@ -92,31 +103,25 @@ namespace {
 //
 // `Escaping` + `Mutating` capture values "capture" the variable. This infects
 // all other capture values of the same variable. None of that variable's
-// captures will be tracked.
-enum PromotedCaptureFlags : unsigned {
-  None     = 0,
-  Escaping = 0x1,
-  Mutating = 0x2,
-  Exposed  = 0x4,
-  Mask     = 0x7
-};
-
-// Identify a promotable capture by its argument index and PromotedCaptureFlags.
-//
-// The promotable argument index corresponds to the closure function's argument
-// index: (num indirect results + param index).
+// captures will be tracked by this pass.
 class PromotedCaptureArg {
-  static const unsigned IndexMask = ~PromotedCaptureFlags::Mask;
+  enum PromotedCaptureFlags : unsigned {
+    None     = 0,
+    Escaping = 0x1,
+    Mutating = 0x2,
+    Exposed  = 0x4,
+    Mask     = 0x7
+  };
+
   static const int FlagBits = 3;
-  static_assert((1 << FlagBits) - 1 == PromotedCaptureFlags::Mask);
+  static_assert((1 << FlagBits) - 1 == PromotedCaptureFlags::Mask, "bad mask");
 
   unsigned IndexAndKind;
 
 public:
-  PromotedCaptureArg(PromotedCaptureFlags flags, unsigned idx) {
-    unsigned shiftedIdx = idx << KindBits;
-    assert((shiftedIdx >> FlagBits) == idx);
-    IndexAndKind = flags | shiftedIdx;
+  PromotedCaptureArg(unsigned idx) {
+    IndexAndKind = idx << FlagBits;
+    assert((IndexAndKind >> FlagBits) == idx);
   }
 
   unsigned getIndex() const { return IndexAndKind >> FlagBits; }
@@ -157,14 +162,14 @@ struct EscapeMutationScanningState {
   /// The global partial_apply -> index map.
   llvm::DenseMap<PartialApplyInst *, PromotedCaptureArg> &IM;
 };
-
 } // end anonymous namespace
 
-typedef llvm::SmallSet<PromotedCaptureArg, 4> IndicesSet;
-typedef llvm::DenseMap<PartialApplyInst*, IndicesSet> PartialApplyIndicesMap;
+// CaptureSet effectively maps an argument index to its capture properties.
+typedef llvm::SmallVector<PromotedCaptureArg, 4> CaptureSet;
+typedef llvm::DenseMap<PartialApplyInst*, CaptureSet> PartialApplyIndicesMap;
 
 Optional<PromotedCaptureArg> findCaptureArg(unsigned argIdx,
-                                            IndicesSet &indices) {
+                                            CaptureSet &indices) {
   for (auto captureArg : indices) {
     if (captureArg.getIndex() == argIdx)
       return captureArg;
@@ -382,7 +387,7 @@ ReachabilityInfo::isReachable(SILBasicBlock *From, SILBasicBlock *To) {
 
 //===----------------------------------------------------------------------===//
 // PartialApplyEscapeAnalysis. Determine whether a closure may escape and
-// record its uses that may mutate its capture values.
+// record any of its use points that may mutate its capture values.
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -404,7 +409,7 @@ public:
 
   // Top-level escape analysis.
   bool computeMayEscape(PartialApplyInst *PAI) {
-    recursiveMayEscape(PAI);
+    return recursiveMayEscape(PAI);
   }
 
 protected:
@@ -426,7 +431,7 @@ bool PartialApplyEscapeAnalysis::isNoCaptureUse(Operand *UI) {
   auto *User = UI->getUser();
 
   // These instructions do not cause the address to escape.
-  if (isa<DebugValueInst>(User) || isa<DebugValueAddrInst>(User) ||
+  if (isa<DebugValueInst>(User) || isa<DebugValueAddrInst>(User)
       || isa<StrongRetainInst>(User) || isa<StrongReleaseInst>(User)
       || isa<DestroyValueInst>(User)) {
     return true;
@@ -447,16 +452,21 @@ bool PartialApplyEscapeAnalysis::applyArgumentEscapes(Operand *O) {
   if (!examineApply)
     return true;
 
-  SILFunction *F = getFunctionBody(O->getUser());
+  auto *Apply = cast<ApplyInst>(O->getUser());
+
   // If we cannot examine the function body, assume the worst.
-  if (!F)
+  auto *F = Apply->getReferencedFunction();
+  if (!F || F->empty())
     return true;
 
+  size_t ArgIndex =
+    O->getOperandNumber() - ApplyInst::getArgumentOperandNumber();  
+  assert(ArgIndex >= F->getConventions().getSILArgIndexOfFirstParam());
+  
   // Check the uses of the operand, but do not recurse down into other
   // apply instructions.
   examineApply = false;
-  auto Param = SILValue(getParameterForOperand(F, O));
-  bool escapes = recursiveMayEscape(Param);
+  bool escapes = recursiveMayEscape(F->getArgument(ArgIndex));
   examineApply = true;
   return escapes;
 }
@@ -481,6 +491,7 @@ bool PartialApplyEscapeAnalysis::recursiveMayEscape(SILValue V) {
       continue;
     }
 
+    // FIXME: Handle TryApply.
     if (auto *Apply = dyn_cast<ApplyInst>(User)) {
       // Applying a function does not cause the function to escape.
       // If the closure is mutating, applying it mutates its capture values.
@@ -623,7 +634,7 @@ static bool isPartialApplyNonCapturingUser(Operand *CurrentOp,
 
   SILArgument *BoxArg = getBoxFromIndex(Fn, Index);
 
-  PromotedCaptureArg captureArg(PromotedCaptureFlags::None, Index);
+  PromotedCaptureArg captureArg(Index);
 
   // Check if this closure is may mutate the captured value.
   if (mayMutateCapture(BoxArg))
@@ -694,7 +705,7 @@ class NonEscapingUserVisitor
 public:
   NonEscapingUserVisitor(Operand *Op,
                          llvm::SmallVectorImpl<SILInstruction *> &Mutations)
-      : Worklist(), Mutations(Mutations), CurrentOp() {
+    : Mutations(Mutations) {
     Worklist.push_back(Op);
   }
 
@@ -716,10 +727,9 @@ public:
 
       // Then visit the specific user. This routine returns true if the value
       // does not escape. In such a case, continue.
-      if (!visit(User)) {
+      if (!visit(User))
         return false;
     }
-
     return true;
   }
 
@@ -838,7 +848,7 @@ public:
 /// the Mutations vector.
 static bool isNonCapturedUse(
   Operand *InitialOp,
-  llvm::SmallVectorImpl<SILInstruction *> &Mutations)) {
+  llvm::SmallVectorImpl<SILInstruction *> &Mutations) {
 
   return NonEscapingUserVisitor(InitialOp, Mutations).compute();
 }
@@ -909,8 +919,11 @@ static bool scanUsesForEscapesAndMutations(Operand *Op,
 /// partial_apply instruction and the index of the box argument in the closure's
 /// argument list is added to IM.
 static bool
-examineAllocBoxInst(AllocBoxInst *ABI, ReachabilityInfo &RI,
-                    llvm::DenseMap<PartialApplyInst *, unsigned> &IM) {
+examineAllocBoxInst(
+  AllocBoxInst *ABI,
+  ReachabilityInfo &RI,
+  llvm::DenseMap<PartialApplyInst *, PromotedCaptureArg> &IM) {
+
   DEBUG(llvm::dbgs() << "Visiting alloc box: " << *ABI);
   EscapeMutationScanningState State{{}, false, IM};
 
@@ -962,8 +975,10 @@ examineAllocBoxInst(AllocBoxInst *ABI, ReachabilityInfo &RI,
       // is after the partial_apply.
       if (RI.isReachable(PAI->getParent(), I->getParent()) ||
           (PAI->getParent() == I->getParent() && isAfter(PAI, I))) {
+
         DEBUG(llvm::dbgs() << "    Exposing: " << *PAI);
         DEBUG(llvm::dbgs() << "    Because of user: " << *I);
+
         captureArg.setExposed();
         // If a capture value escapes this scope and is exposed, it is captured,
         // so stop tracking it.
@@ -993,7 +1008,7 @@ constructMapFromPartialApplyToPromotableIndices(SILFunction *F,
 
   // This is a map from each partial apply to a single index which is a
   // promotable box variable for the alloc_box currently being considered.
-  llvm::DenseMap<PartialApplyInst*, unsigned> IndexMap;
+  llvm::DenseMap<PartialApplyInst*, PromotedCaptureArg> IndexMap;
 
   // Consider all alloc_box instructions in the function.
   for (auto &BB : *F) {
@@ -1004,7 +1019,7 @@ constructMapFromPartialApplyToPromotableIndices(SILFunction *F,
           // If we are able to promote at least one capture of the alloc_box,
           // then add the promotable index to the main map.
           for (auto &IndexPair : IndexMap)
-            Map[IndexPair.first].insert(IndexPair.second);
+            Map[IndexPair.first].push_back(IndexPair.second);
         }
         DEBUG(llvm::dbgs() << "\n");
       }
@@ -1026,7 +1041,7 @@ public:
   friend class SILCloner<ClosureCloner>;
 
   ClosureCloner(SILFunction *Orig, IsSerialized_t Serialized,
-                StringRef ClonedName, IndicesSet &PromotableIndices);
+                StringRef ClonedName, CaptureSet &PromotableIndices);
 
   void populateCloned();
 
@@ -1035,7 +1050,7 @@ public:
 private:
   static SILFunction *initCloned(SILFunction *Orig, IsSerialized_t Serialized,
                                  StringRef ClonedName,
-                                 IndicesSet &PromotableIndices);
+                                 CaptureSet &PromotableIndices);
 
   SILValue getProjectBoxMappedVal(SILValue Operand);
 
@@ -1050,7 +1065,7 @@ private:
   void visitEndAccessInst(EndAccessInst *Inst);
 
   SILFunction *Orig;
-  IndicesSet &PromotableIndices;
+  CaptureSet &PromotableIndices;
   llvm::DenseMap<SILArgument *, SILValue> BoxArgumentMap;
   llvm::DenseMap<ProjectBoxInst *, SILValue> ProjectBoxArgumentMap;
 };
@@ -1058,9 +1073,10 @@ private:
 
 ClosureCloner::ClosureCloner(SILFunction *Orig, IsSerialized_t Serialized,
                              StringRef ClonedName,
-                             IndicesSet &PromotableIndices)
+                             CaptureSet &PromotableIndices)
   : SILClonerWithScopes<ClosureCloner>(
-                           *initCloned(Orig, Serialized, ClonedName, PromotableIndices)),
+                           *initCloned(Orig, Serialized, ClonedName,
+                                       PromotableIndices)),
     Orig(Orig), PromotableIndices(PromotableIndices) {
   assert(Orig->getDebugScope()->Parent != getCloned()->getDebugScope()->Parent);
 }
@@ -1074,7 +1090,7 @@ ClosureCloner::ClosureCloner(SILFunction *Orig, IsSerialized_t Serialized,
 ///    transformed address or value argument.
 static void
 computeNewArgInterfaceTypes(SILFunction *F,
-                            IndicesSet &PromotableIndices,
+                            CaptureSet &PromotableIndices,
                             SmallVectorImpl<SILParameterInfo> &OutTys) {
   auto fnConv = F->getConventions();
   auto Parameters = fnConv.funcTy->getParameters();
@@ -1097,7 +1113,7 @@ computeNewArgInterfaceTypes(SILFunction *F,
     auto captureArg = findCaptureArg(ArgIndex, PromotableIndices);
 
     DEBUG(llvm::dbgs() << "Index: " << Index << "; PromotableIndices: "
-          << captureArg?"yes":"no"
+          << (captureArg?"yes":"no")
           << " Param: "; param.dump());
 
     if (!captureArg) {
@@ -1105,16 +1121,17 @@ computeNewArgInterfaceTypes(SILFunction *F,
       continue;
     }
 
+    assert(!param.isFormalIndirect());
+    auto paramTy = param.getSILStorageType();
+    auto paramBoxTy = paramTy.castTo<SILBoxType>();
+    auto paramBoxedTy = paramBoxTy->getFieldType(F->getModule(), 0);
+    assert(paramBoxTy->getLayout()->getFields().size() == 1
+           && "promoting compound box not implemented yet");
+
     ParameterConvention convention;
-    if (captureArg.mayPassByValue()) {
-      // Perform the proper conversions and then add it to the new parameter list
-      // for the type.
-      assert(!param.isFormalIndirect());
-      auto paramTy = param.getSILStorageType();
-      auto paramBoxTy = paramTy.castTo<SILBoxType>();
-      assert(paramBoxTy->getLayout()->getFields().size() == 1
-             && "promoting compound box not implemented yet");
-      auto paramBoxedTy = paramBoxTy->getFieldType(F->getModule(), 0);
+    if (captureArg->mayPassByValue()) {
+      // Perform the proper conversions and then add it to the new parameter
+      // list for the type.
       auto &paramTL = Types.getTypeLowering(paramBoxedTy);
       if (paramTL.isFormallyPassedIndirectly()) {
         convention = ParameterConvention::Indirect_In;
@@ -1124,6 +1141,8 @@ computeNewArgInterfaceTypes(SILFunction *F,
         convention = ParameterConvention::Direct_Owned;
       }
     } else {
+      // TODO: Once exclusivity is enforced, this convention will be either @in
+      // or @inout.
       convention = ParameterConvention::Indirect_InoutAliasable;
     }
     OutTys.push_back(SILParameterInfo(paramBoxedTy.getSwiftRValueType(),
@@ -1133,18 +1152,19 @@ computeNewArgInterfaceTypes(SILFunction *F,
 
 static std::string getSpecializedName(SILFunction *F,
                                       IsSerialized_t Serialized,
-                                      IndicesSet &PromotableIndices) {
+                                      CaptureSet &PromotableIndices) {
   auto P = Demangle::SpecializationPass::CapturePromotion;
   Mangle::FunctionSignatureSpecializationMangler Mangler(P, Serialized, F);
   auto fnConv = F->getConventions();
 
   for (unsigned argIdx = 0, endIdx = fnConv.getNumSILArguments();
        argIdx < endIdx; ++argIdx) {
-    //!!! find index
-    if (!PromotableIndices.count(argIdx))
+
+    auto captureArg = findCaptureArg(argIdx, PromotableIndices);
+    if (!captureArg)
       continue;
 
-    if (captureArg.mayPassByValue())
+    if (captureArg->mayPassByValue())
       Mangler.setArgumentBoxToValue(argIdx);
     else
       Mangler.setArgumentBoxToStack(argIdx);
@@ -1164,7 +1184,7 @@ static std::string getSpecializedName(SILFunction *F,
 SILFunction*
 ClosureCloner::initCloned(SILFunction *Orig, IsSerialized_t Serialized,
                           StringRef ClonedName,
-                          IndicesSet &PromotableIndices) {
+                          CaptureSet &PromotableIndices) {
   SILModule &M = Orig->getModule();
 
   // Compute the arguments for our new function.
@@ -1213,8 +1233,7 @@ ClosureCloner::populateCloned() {
   unsigned ArgNo = 0;
   auto I = OrigEntryBB->args_begin(), E = OrigEntryBB->args_end();
   for (; I != E; ++ArgNo, ++I) {
-    //!!! findCaptureArg
-    if (!PromotableIndices.count(ArgNo)) {
+    if (!findCaptureArg(ArgNo, PromotableIndices)) {
       // Otherwise, create a new argument which copies the original argument
       SILValue MappedValue = ClonedEntryBB->createFunctionArgument(
           (*I)->getType(), (*I)->getDecl());
@@ -1457,7 +1476,7 @@ void ClosureCloner::visitLoadInst(LoadInst *LI) {
 
 static SILFunction *
 constructClonedFunction(PartialApplyInst *PAI, FunctionRefInst *FRI,
-                        IndicesSet &PromotableIndices) {
+                        CaptureSet &PromotableIndices) {
   SILFunction *F = PAI->getFunction();
 
   // Create the Cloned Name for the function.
@@ -1529,7 +1548,7 @@ static SILValue getOrCreateProjectBoxHelper(SILValue PartialOperand) {
 /// necessary. Also, if the closure is cloned, the cloned function is added to
 /// the worklist.
 static SILFunction *
-processPartialApplyInst(PartialApplyInst *PAI, IndicesSet &PromotableIndices,
+processPartialApplyInst(PartialApplyInst *PAI, CaptureSet &PromotableIndices,
                         SmallVectorImpl<SILFunction*> &Worklist) {
   SILModule &M = PAI->getModule();
 
@@ -1572,7 +1591,7 @@ processPartialApplyInst(PartialApplyInst *PAI, IndicesSet &PromotableIndices,
     SILValue Box = PAI->getOperand(OpNo);
     SILValue Addr = getOrCreateProjectBoxHelper(Box);
 
-    if (captureArg.mayPassByValue()) {
+    if (captureArg->mayPassByValue()) {
       auto &typeLowering = M.getTypeLowering(Addr->getType());
       Args.push_back(
         typeLowering.emitLoadOfCopy(B, PAI->getLoc(), Addr, IsNotTake));
