@@ -49,6 +49,11 @@
 /// `@inout_aliasable`. Consequently, they force the variable to be captured if
 /// they are ever passed to an escaping closure, even of the closure does not
 /// mutate the value.
+///
+/// TODO: Merge this pass with AccessEnforcementSelection and AllocBoxToStack
+/// and rerun it later in the pipeline after inlinine/devirtualization. There's
+/// nothing this pass does that shouldn't be applied subsequently to optimized
+/// code.
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "sil-capture-promotion"
@@ -181,6 +186,9 @@ STATISTIC(NumCapturesPromoted, "Number of captures promoted");
 
 //===----------------------------------------------------------------------===//
 // Basic Block Reachability Analysis
+//
+// This is a completely generic CFG analysis that happens to be used only within
+// this pass.
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -386,16 +394,24 @@ ReachabilityInfo::isReachable(SILBasicBlock *From, SILBasicBlock *To) {
 }
 
 //===----------------------------------------------------------------------===//
-// PartialApplyEscapeAnalysis. Determine whether a closure may escape and
-// record any of its use points that may mutate its capture values.
-//===----------------------------------------------------------------------===//
+// PartialApplyEscapeAnalysis
+//
+// Determine whether a closure may escape and record any of its use points that
+// may mutate its capture values.
+//
+// This generally separates "no-escape" vs. escaping closures. A property which
+// may be refined as the optimization pipeline progresses and as the optimizer
+// itself improves.
+//
+// This should probably be turned into a proper bottom-up, cached analysis and
+// factored with NonEscapingUserVisitor.
+// ===----------------------------------------------------------------------===//
 
 namespace {
 
 // TODO: This is intentionally nearly identical to AllocBoxToStack's
-// analysis--we want this to cover exactly the same conditions. It could be made
-// a utility, but it's likely AllocBoxToStack won't need this logic anymore
-// after a bit of mandatory pass cleanup.
+// analysis--we want this to cover exactly the same conditions. It should be made
+// a utility, but the passes should be merged and cleaned up first.
 class PartialApplyEscapeAnalysis {
   // Mutations vector pointer is null if the closure is non-mutating.
   llvm::SmallVectorImpl<SILInstruction *> *Mutations;
@@ -533,9 +549,14 @@ bool PartialApplyEscapeAnalysis::recursiveMayEscape(SILValue V) {
 }
 
 //===----------------------------------------------------------------------===//
-// PartialApply Analysis. Mark capture values as escaping, mutating, and/or
-// exposed. Bail early as soon as the value is captured (escaping and mutating).
-//===----------------------------------------------------------------------===//
+// PartialApply Analysis.
+//
+// Mark capture values as escaping, mutating, and/or exposed. Bail early as soon
+// as the value is captured (escaping and mutating).
+// 
+// This is really the unique analysis makes this pass special. (There's not much
+// to it.)
+// ===----------------------------------------------------------------------===//
 
 static SILArgument *getBoxFromIndex(SILFunction *F, unsigned Index) {
   assert(F->isDefinition() && "Expected definition not external declaration!");
@@ -679,10 +700,16 @@ static bool isPartialApplyNonCapturingUser(Operand *CurrentOp,
 }
 
 //===----------------------------------------------------------------------===//
-// NonEscapingUserVisitor: Analyze ProjectBox users, collecting mutations and
-// reporting any unanalyzable use as an "escape". Completely unrelated to
-// whether a closure and its capture values are escaping.
-//===----------------------------------------------------------------------===//
+// NonEscapingUserVisitor
+//
+// Analyze ProjectBox users, collecting mutations and reporting any unanalyzable
+// use as an "escape". Completely unrelated to whether a closure and its capture
+// values are escaping.
+//
+// This is really a general value escape/mutation analysis. A cheap, -Onone,
+// version of SideEffectAnalysis. It should be generalized, moved out of this
+// pass and turned into a fully bottom up, cached analysis.
+// ===----------------------------------------------------------------------===//
 
 namespace {
 
@@ -854,9 +881,10 @@ static bool isNonCapturedUse(
 }
 
 //===----------------------------------------------------------------------===//
-// AllocBox Analysis: Find promotable captured values and populate a
-// PartialApplyIndicesMap.
-//===----------------------------------------------------------------------===//
+// AllocBox Analysis
+//
+// Find promotable captured values and populate a PartialApplyIndicesMap.
+// ===----------------------------------------------------------------------===//
 
 static bool isProjectBoxNonEscapingUse(ProjectBoxInst *PBI,
                                        EscapeMutationScanningState &State) {
@@ -1028,9 +1056,10 @@ constructMapFromPartialApplyToPromotableIndices(SILFunction *F,
 }
 
 //===----------------------------------------------------------------------===//
-// ClosureCloner: Rewrite closure bodies and call sites after promoting
-// arguments.
-//===----------------------------------------------------------------------===//
+// ClosureCloner
+//
+// Rewrite closure bodies and call sites after promoting arguments.
+// ===----------------------------------------------------------------------===//
 
 namespace {
 /// \brief A SILCloner subclass which clones a closure function while converting
@@ -1052,11 +1081,14 @@ private:
                                  StringRef ClonedName,
                                  CaptureSet &PromotableIndices);
 
+  SILValue getBoxArgMappedVal(SILValue Operand);
   SILValue getProjectBoxMappedVal(SILValue Operand);
 
   void visitDebugValueAddrInst(DebugValueAddrInst *Inst);
   void visitStrongReleaseInst(StrongReleaseInst *Inst);
   void visitDestroyValueInst(DestroyValueInst *Inst);
+  void visitStrongRetainInst(StrongRetainInst *Inst);
+  void visitCopyValueInst(CopyValueInst *CVI);
   void visitStructElementAddrInst(StructElementAddrInst *Inst);
   void visitLoadInst(LoadInst *Inst);
   void visitLoadBorrowInst(LoadBorrowInst *Inst);
@@ -1066,7 +1098,11 @@ private:
 
   SILFunction *Orig;
   CaptureSet &PromotableIndices;
+  // Map all original promoted capture arguments to the the cloned closure's
+  // argument, which may be either an address or object.
   llvm::DenseMap<SILArgument *, SILValue> BoxArgumentMap;
+  // For capture arguments that are being promoted to (non-address) values, map
+  // the original box projection to the new value argument.
   llvm::DenseMap<ProjectBoxInst *, SILValue> ProjectBoxArgumentMap;
 };
 } // end anonymous namespace
@@ -1233,7 +1269,8 @@ ClosureCloner::populateCloned() {
   unsigned ArgNo = 0;
   auto I = OrigEntryBB->args_begin(), E = OrigEntryBB->args_end();
   for (; I != E; ++ArgNo, ++I) {
-    if (!findCaptureArg(ArgNo, PromotableIndices)) {
+    auto captureArg = findCaptureArg(ArgNo, PromotableIndices);
+    if (!captureArg) {
       // Otherwise, create a new argument which copies the original argument
       SILValue MappedValue = ClonedEntryBB->createFunctionArgument(
           (*I)->getType(), (*I)->getDecl());
@@ -1245,32 +1282,38 @@ ClosureCloner::populateCloned() {
     auto BoxTy = (*I)->getType().castTo<SILBoxType>();
     assert(BoxTy->getLayout()->getFields().size() == 1 &&
            "promoting compound box not implemented");
-    auto BoxedTy = BoxTy->getFieldType(Cloned->getModule(), 0).getObjectType();
-    //!!! get address type
+
+    SILType BoxedTy = BoxTy->getFieldType(Cloned->getModule(), 0);
+    if (captureArg->mayPassByValue())
+      BoxedTy = BoxedTy.getObjectType();
+    
     SILValue MappedValue =
         ClonedEntryBB->createFunctionArgument(BoxedTy, (*I)->getDecl());
 
     // If SIL ownership is enabled, we need to perform a borrow here if we have
     // a non-trivial value. We know that our value is not written to and it does
     // not escape. The use of a borrow enforces this.
-    //!!! Only for by-value
-    if (Cloned->hasQualifiedOwnership() &&
+    if (BoxedTy.isObject() && Cloned->hasQualifiedOwnership() &&
         MappedValue.getOwnershipKind() != ValueOwnershipKind::Trivial) {
       SILLocation Loc(const_cast<ValueDecl *>((*I)->getDecl()));
       MappedValue = getBuilder().createBeginBorrow(Loc, MappedValue);
     }
     BoxArgumentMap.insert(std::make_pair(*I, MappedValue));
 
-    // Track the projections of the box.
-    //!!! replace all users
+    // Map any projections of the box to the promoted argument.
+    // For address-type arguments, simply record the address in the normal
+    // ValueMap.
+    // For arguements promoted to values, use a separate ProjectBoxArgumentMap
+    // to map original addresses to the substituted value.
     for (auto *Use : (*I)->getUses()) {
       if (auto Proj = dyn_cast<ProjectBoxInst>(Use->getUser())) {
-        ProjectBoxArgumentMap.insert(std::make_pair(Proj, MappedValue));
+        if (BoxedTy.isAddress())
+          ValueMap.insert(std::make_pair(Proj, MappedValue));
+        else
+          ProjectBoxArgumentMap.insert(std::make_pair(Proj, MappedValue));
       }
     }
   }
-
-  //!!! Use logic from PromotedParameterCloner
 
   BBMap.insert(std::make_pair(OrigEntryBB, ClonedEntryBB));
   // Recursively visit original BBs in depth-first preorder, starting with the
@@ -1284,8 +1327,23 @@ ClosureCloner::populateCloned() {
   }
 }
 
+// If this operand originates from a promoted box argument, return the mapped
+// value, which may be an address or object.
+SILValue ClosureCloner::getBoxArgMappedVal(SILValue Operand) {
+  auto *Arg = dyn_cast<SILArgument>(Operand);
+  if (!Arg) return SILValue();
+  
+  auto I = BoxArgumentMap.find(Arg);
+  if (I != BoxArgumentMap.end())
+    return I->second;
+  
+  return SILValue();
+}
+
 /// If this operand originates from a mapped ProjectBox, return the mapped
 /// value. Otherwise return an invalid value.
+//
+// ProjectBoxArgumentMap is empty if the promoted capture is passed by address.
 SILValue ClosureCloner::getProjectBoxMappedVal(SILValue Operand) {
   if (auto *Access = dyn_cast<BeginAccessInst>(Operand))
     Operand = Access->getSource();
@@ -1319,40 +1377,54 @@ ClosureCloner::visitStrongReleaseInst(StrongReleaseInst *Inst) {
   assert(
       Inst->getFunction()->hasUnqualifiedOwnership() &&
       "Should not see strong release in a function with qualified ownership");
-  SILValue Operand = Inst->getOperand();
-  if (auto *A = dyn_cast<SILArgument>(Operand)) {
-    auto I = BoxArgumentMap.find(A);
-    if (I != BoxArgumentMap.end()) {
-      // Releases of the box arguments get replaced with ReleaseValue of the new
-      // object type argument.
+  if (SILValue arg = getBoxArgMappedVal(Inst->getOperand())) {
+    // Releases of the box arguments get replaced with ReleaseValue of the new
+    // object type argument. Address type arguments don't need to be released.
+    if (arg->getType().isObject()) {
       SILFunction &F = getBuilder().getFunction();
-      auto &typeLowering = F.getModule().getTypeLowering(I->second->getType());
+      auto &typeLowering = F.getModule().getTypeLowering(arg->getType());
       SILBuilderWithPostProcess<ClosureCloner, 1> B(this, Inst);
-      typeLowering.emitDestroyValue(B, Inst->getLoc(), I->second);
-      return;
+      typeLowering.emitDestroyValue(B, Inst->getLoc(), arg);
     }
+    return;
   }
 
   SILCloner<ClosureCloner>::visitStrongReleaseInst(Inst);
 }
 
-/// \brief Handle a destroy_value instruction during cloning of a closure; if
-/// it is a strong release of a promoted box argument, then it is replaced with
-/// a destroy_value of the new object type argument, otherwise it is handled
-/// normally.
+/// \brief Handle a destroy_value instruction during cloning of a closure; if it
+/// is a strong release of a promoted box argument, then it is replaced with a
+/// destroy_value of the new object type argument or ignored completely for
+/// address type arguments, otherwise it is handled normally.
 void ClosureCloner::visitDestroyValueInst(DestroyValueInst *Inst) {
-  SILValue Operand = Inst->getOperand();
-  if (auto *A = dyn_cast<SILArgument>(Operand)) {
-    auto I = BoxArgumentMap.find(A);
-    if (I != BoxArgumentMap.end()) {
+  // If we are a destroy of a promoted address parameter, just drop the
+  // instruction. We look through copy_value to preserve prior AllocBoxToStack
+  // behavior.
+  SILInstruction *Tmp = Inst;
+  while (auto *CopyOp = dyn_cast<CopyValueInst>(Tmp->getOperand(0))) {
+    Tmp = CopyOp;
+  }
+
+  if (auto arg = getBoxArgMappedVal(Tmp->getOperand(0))) {
+    // Address type arguments don't need to be destroyed, even if they have been
+    // copied. (The CopyValue will also be stripped).
+    if (arg->getType().isAddress())
+      return;
+
+    // This promoted argument is passed by value. If it has not been copied,
+    // then destroy the argument value. Otherwise, fall through to handle the
+    // DestroyValue normally.
+    if (Tmp == Inst) {
+      // This destroy directly operates on an argument.
+      //
       // Releases of the box arguments get replaced with an end_borrow,
-      // destroy_value of the new object type argument.
+      // destroy_value of the new object type argument. 
       SILFunction &F = getBuilder().getFunction();
-      auto &typeLowering = F.getModule().getTypeLowering(I->second->getType());
+      auto &typeLowering = F.getModule().getTypeLowering(arg->getType());
       SILBuilderWithPostProcess<ClosureCloner, 1> B(this, Inst);
-
-      SILValue Value = I->second;
-
+      
+      SILValue Value = arg;
+      
       // If ownership is enabled, then we must emit a begin_borrow for any
       // non-trivial value.
       if (F.hasQualifiedOwnership() &&
@@ -1361,7 +1433,7 @@ void ClosureCloner::visitDestroyValueInst(DestroyValueInst *Inst) {
         Value = BBI->getOperand();
         B.createEndBorrow(Inst->getLoc(), BBI, Value);
       }
-
+    
       typeLowering.emitDestroyValue(B, Inst->getLoc(), Value);
       return;
     }
@@ -1370,10 +1442,37 @@ void ClosureCloner::visitDestroyValueInst(DestroyValueInst *Inst) {
   SILCloner<ClosureCloner>::visitDestroyValueInst(Inst);
 }
 
+void ClosureCloner::visitStrongRetainInst(StrongRetainInst *Inst) {
+  assert(
+      Inst->getFunction()->hasUnqualifiedOwnership() &&
+      "Should not see strong release in a function with qualified ownership");
+  if (auto arg = getBoxArgMappedVal(Inst->getOperand())) {
+    // If the argument is promoted to an address, ignore both retains and
+    // releases.
+    if (arg->getType().isAddress())
+      return;
+  }
+  SILCloner<ClosureCloner>::visitStrongRetainInst(Inst);
+}
+
+void ClosureCloner::visitCopyValueInst(CopyValueInst *CVI) {
+  // If it's a copy of a promoted address argument, just drop the instruction.
+  auto *Tmp = CVI;
+  while (auto *CopyOp = dyn_cast<CopyValueInst>(Tmp->getOperand())) {
+    Tmp = CopyOp;
+  }
+  if (auto arg = getBoxArgMappedVal(Tmp->getOperand())) {
+    if (arg->getType().isAddress())
+      return;
+  }
+  SILCloner<ClosureCloner>::visitCopyValueInst(CVI);
+}
+
 /// Handle a struct_element_addr instruction during cloning of a closure.
 ///
-/// If its operand is the promoted address argument then ignore it, otherwise it
-/// is handled normally.
+/// If its operand is a promoted-by-value argument then ignore it because
+/// visitLoadInst will peak through these projections, otherwise it is handled
+/// normally.
 void
 ClosureCloner::visitStructElementAddrInst(StructElementAddrInst *Inst) {
   if (getProjectBoxMappedVal(Inst->getOperand()))
@@ -1382,7 +1481,8 @@ ClosureCloner::visitStructElementAddrInst(StructElementAddrInst *Inst) {
   SILCloner<ClosureCloner>::visitStructElementAddrInst(Inst);
 }
 
-/// project_box of captured boxes can be eliminated.
+/// project_box of captured boxes can be eliminated both for address and
+/// by-value promotion.
 void
 ClosureCloner::visitProjectBoxInst(ProjectBoxInst *I) {
   if (auto Arg = dyn_cast<SILArgument>(I->getOperand()))
@@ -1392,7 +1492,7 @@ ClosureCloner::visitProjectBoxInst(ProjectBoxInst *I) {
   SILCloner<ClosureCloner>::visitProjectBoxInst(I);
 }
 
-/// If its operand is the promoted address argument then ignore it, otherwise it
+/// If its operand is a promoted-by-value argument then ignore it, otherwise it
 /// is handled normally.
 void ClosureCloner::visitBeginAccessInst(BeginAccessInst *Inst) {
   if (getProjectBoxMappedVal(Inst->getSource()))
@@ -1401,7 +1501,7 @@ void ClosureCloner::visitBeginAccessInst(BeginAccessInst *Inst) {
   SILCloner<ClosureCloner>::visitBeginAccessInst(Inst);
 }
 
-/// If its operand is the promoted address argument then ignore it, otherwise it
+/// If its operand is a promoted-by-value argument then ignore it, otherwise it
 /// is handled normally.
 void ClosureCloner::visitEndAccessInst(EndAccessInst *Inst) {
   if (getProjectBoxMappedVal(Inst->getBeginAccess()))
@@ -1411,9 +1511,6 @@ void ClosureCloner::visitEndAccessInst(EndAccessInst *Inst) {
 }
 
 /// \brief Handle a load_borrow instruction during cloning of a closure.
-///
-/// The two relevant cases are a direct load from a promoted address argument or
-/// a load of a struct_element_addr of a promoted address argument.
 void ClosureCloner::visitLoadBorrowInst(LoadBorrowInst *LI) {
   assert(LI->getFunction()->hasQualifiedOwnership() &&
          "We should only see a load borrow in ownership qualified SIL");
@@ -1563,6 +1660,10 @@ processPartialApplyInst(PartialApplyInst *PAI, CaptureSet &PromotableIndices,
   SILBuilderWithScope B(PAI);
   SILValue FnVal = B.createFunctionRef(PAI->getLoc(), ClonedFn);
 
+  // If any captures are promoted to an address, compute partial apply to insert
+  // destroys on the caller side.
+  ValueLifetimeAnalysis::Frontier PAFrontier;
+
   // Populate the argument list for a new partial_apply instruction, taking into
   // consideration any captures.
   auto CalleeFunctionTy = PAI->getCallee()->getType().castTo<SILFunctionType>();
@@ -1607,9 +1708,24 @@ processPartialApplyInst(PartialApplyInst *PAI, CaptureSet &PromotableIndices,
       releasePartialApplyCapturedArg(B, PAI->getLoc(), Box, CPInfo);
     } else {
       Args.push_back(Addr);
-      //!!! See AllocBoxToStack, specializePartialApply, PAFrontier
-    }
 
+      // Compute partial apply liveness lazilly.
+      // Note: This may change the CFG.
+      if (PAFrontier.empty()) {
+        ValueLifetimeAnalysis VLA(PAI);
+        // Note: This may add blocks to the CFG.
+        VLA.computeFrontier(PAFrontier,
+                            ValueLifetimeAnalysis::AllowToModifyCFG);
+        assert(!PAFrontier.empty() && "partial_apply must have at least one use"
+               " to release the returned function");
+      }
+      // Insert destroys of the box at each point where the partial_apply
+      // becomes dead.
+      for (SILInstruction *FrontierInst : PAFrontier) {
+        SILBuilderWithScope Builder(FrontierInst);
+        Builder.createDestroyValue(PAI->getLoc(), Box);
+      }
+    }
     ++NumCapturesPromoted;
   }
 
@@ -1628,7 +1744,7 @@ processPartialApplyInst(PartialApplyInst *PAI, CaptureSet &PromotableIndices,
 }
 
 //===----------------------------------------------------------------------===//
-// CapturePromotionPass. Top-Level.
+// CapturePromotionPass. Top-Level function pass.
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -1663,6 +1779,8 @@ void CapturePromotionPass::processFunction(SILFunction *F,
 
   // Do the actual promotions; all promotions on a single partial_apply are
   // handled together.
+  // 
+  // Note: The CFG may change here as part of ValueLifetimeAnalysis.
   for (auto &IndicesPair : IndicesMap) {
     PartialApplyInst *PAI = IndicesPair.first;
     SILFunction *ClonedFn = processPartialApplyInst(PAI, IndicesPair.second,
