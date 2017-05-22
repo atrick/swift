@@ -473,18 +473,30 @@ bool PartialApplyEscapeAnalysis::applyArgumentEscapes(Operand *O) {
   auto *Apply = cast<ApplyInst>(O->getUser());
 
   // If we cannot examine the function body, assume the worst.
-  auto *F = Apply->getReferencedFunction();
-  if (!F || F->empty())
+  auto *Callee = Apply->getReferencedFunction();
+  if (!Callee)
     return true;
 
   size_t ArgIndex =
       O->getOperandNumber() - ApplyInst::getArgumentOperandNumber();
-  assert(ArgIndex >= F->getConventions().getSILArgIndexOfFirstParam());
+  int ParamIndex =
+    ArgIndex - Callee->getConventions().getSILArgIndexOfFirstParam();
+  assert(ParamIndex >= 0);
+
+  // If this callee's parameter type is noescape, there is no need to further
+  // analyze the callee.
+  SILParameterInfo paramInfo =
+    Apply->getSubstCalleeType()->getParameters()[ParamIndex];
+  if (paramInfo.getType()->castTo<SILFunctionType>()->isNoEscape())
+    return false;
+
+  if (Callee->empty())
+    return true;
 
   // Check the uses of the operand, but do not recurse down into other
   // apply instructions.
   examineApply = false;
-  bool escapes = recursiveMayEscape(F->getArgument(ArgIndex));
+  bool escapes = recursiveMayEscape(Callee->getArgument(ArgIndex));
   examineApply = true;
   return escapes;
 }
@@ -566,6 +578,18 @@ static SILArgument *getBoxFromIndex(SILFunction *F, unsigned Index) {
   return Entry.getArgument(Index);
 }
 
+// Helper to check for load-like non-mutating operations.
+static bool isLoadFrom(Operand *AddrOper) {
+  SILInstruction *AddrInst = AddrOper->getUser();
+  if (isa<LoadInst>(AddrInst))
+    return true;
+  if (auto *copyAddr = dyn_cast<CopyAddrInst>(AddrInst)) {
+    if (copyAddr->getDest() != AddrOper->get())
+      return true;
+  }
+  return false;
+}
+
 /// \brief Given a partial_apply instruction and the argument index into its
 /// callee's argument list of a box argument (which is followed by an argument
 /// for the address of the box's contents), return true if the closure may
@@ -595,13 +619,14 @@ static bool mayMutateCapture(SILArgument *BoxArg) {
   // TODO: This seems overly limited.  Why not projections of tuples and other
   // stuff?  Also, why not recursive struct elements?  This should be a helper
   // function that mirrors isNonEscapingUse.
-  auto checkAddrUse = [](SILInstruction *AddrInst) {
+  auto checkAddrUse = [](Operand *AddrOper) {
+    SILInstruction *AddrInst = AddrOper->getUser();
     if (auto *SEAI = dyn_cast<StructElementAddrInst>(AddrInst)) {
       for (auto *UseOper : SEAI->getUses()) {
-        if (isa<LoadInst>(UseOper->getUser()))
+        if (isLoadFrom(UseOper))
           return false;
       }
-    } else if (isa<LoadInst>(AddrInst) || isa<DebugValueAddrInst>(AddrInst)
+    } else if (isLoadFrom(AddrOper) || isa<DebugValueAddrInst>(AddrInst)
                || isa<MarkFunctionEscapeInst>(AddrInst)
                || isa<EndAccessInst>(AddrInst)) {
       return false;
@@ -612,10 +637,10 @@ static bool mayMutateCapture(SILArgument *BoxArg) {
     for (auto *UseOper : Projection->getUses()) {
       if (auto *Access = dyn_cast<BeginAccessInst>(UseOper->getUser())) {
         for (auto *AccessUseOper : Access->getUses()) {
-          if (checkAddrUse(AccessUseOper->getUser()))
+          if (checkAddrUse(AccessUseOper))
             return true;
         }
-      } else if (checkAddrUse(UseOper->getUser()))
+      } else if (checkAddrUse(UseOper))
         return true;
     }
   }
