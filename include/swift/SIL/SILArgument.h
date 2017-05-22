@@ -216,6 +216,23 @@ public:
     return getArgumentConvention() == P;
   }
 
+  // True if for function type arguments derived from a formal type that is
+  // *not* marked "@escaping". This allows the optimizer to assume this argument
+  // never escapes without fully, recursively analyzing all its uses.
+  //
+  // Ideally, "noescape" attribute would be inherited by SILFunctionType from
+  // the formal FunctionType. However, there are pervasive assumptions,
+  // particularly in reabstraction, that lowered SILFunctionType arguments
+  // match their parameter types.
+  bool isNoEscapeFunc() const {
+    if (auto *D = getDecl()) {
+      if (!D->hasInterfaceType()) return false;
+      if (auto formalFuncTy = D->getInterfaceType()->getAs<AnyFunctionType>())
+        return formalFuncTy->isNoEscape();
+    }
+    return false;
+  }
+
   static bool classof(const ValueBase *V) {
     return V->getKind() == ValueKind::SILFunctionArgument;
   }
