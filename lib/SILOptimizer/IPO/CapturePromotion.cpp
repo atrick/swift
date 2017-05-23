@@ -467,34 +467,31 @@ bool PartialApplyEscapeAnalysis::isNoCaptureUse(Operand *UI) {
 /// Could this operand to an apply escape that function by being
 /// stored or returned?
 bool PartialApplyEscapeAnalysis::applyArgumentEscapes(Operand *O) {
-  if (!examineApply)
-    return true;
-
   auto *Apply = cast<ApplyInst>(O->getUser());
 
   // If we cannot examine the function body, assume the worst.
+  //
+  // FIXME: We should still be able to check if the interface type is not
+  // "@escaping", but that may require plumbing that attribute into
+  // SILFunctionType.
   auto *Callee = Apply->getReferencedFunction();
-  if (!Callee)
+  if (!Callee || Callee->empty())
     return true;
 
   size_t ArgIndex =
       O->getOperandNumber() - ApplyInst::getArgumentOperandNumber();
-  int ParamIndex =
-    ArgIndex - Callee->getConventions().getSILArgIndexOfFirstParam();
-  assert(ParamIndex >= 0);
+  assert(ArgIndex >= Callee->getConventions().getSILArgIndexOfFirstParam());
 
   // If this callee's parameter type is noescape, there is no need to further
   // analyze the callee.
-  SILParameterInfo paramInfo =
-    Apply->getSubstCalleeType()->getParameters()[ParamIndex];
-  if (paramInfo.getType()->castTo<SILFunctionType>()->isNoEscape())
+  if (cast<SILFunctionArgument>(Callee->getArgument(ArgIndex))
+          ->isNoEscapeFunc())
     return false;
-
-  if (Callee->empty())
-    return true;
 
   // Check the uses of the operand, but do not recurse down into other
   // apply instructions.
+  if (!examineApply)
+    return true;
   examineApply = false;
   bool escapes = recursiveMayEscape(Callee->getArgument(ArgIndex));
   examineApply = true;
