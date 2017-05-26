@@ -414,6 +414,8 @@ namespace {
 // made
 // a utility, but the passes should be merged and cleaned up first.
 class PartialApplyEscapeAnalysis {
+  SILFunction *TopLevelFunc;
+  
   // Mutations vector pointer is null if the closure is non-mutating.
   llvm::SmallVectorImpl<SILInstruction *> *Mutations;
 
@@ -421,8 +423,9 @@ class PartialApplyEscapeAnalysis {
   bool examineApply = true;
 
 public:
-  PartialApplyEscapeAnalysis(llvm::SmallVectorImpl<SILInstruction *> *Mutations)
-      : Mutations(Mutations) {}
+  PartialApplyEscapeAnalysis(SILFunction *TopLevelFunc,
+                             llvm::SmallVectorImpl<SILInstruction *> *Mutations)
+      : TopLevelFunc(TopLevelFunc), Mutations(Mutations) {}
 
   // Top-level escape analysis.
   bool computeMayEscape(PartialApplyInst *PAI) {
@@ -431,7 +434,9 @@ public:
 
 protected:
   void recordMutation(SILInstruction *Inst) {
-    if (Mutations)
+    // If this closure is mutating and we are still analyzing the top-level
+    // function, record the mutation point.
+    if (Mutations && Inst->getFunction() == TopLevelFunc)
       Mutations->push_back(Inst);
   }
 
@@ -520,10 +525,13 @@ bool PartialApplyEscapeAnalysis::recursiveMayEscape(SILValue V) {
 
     // FIXME: Handle TryApply.
     if (auto *Apply = dyn_cast<ApplyInst>(User)) {
-      // Applying a function does not cause the function to escape.
       // If the closure is mutating, applying it mutates its capture values.
+      // Likewise, if the closure is passed as an argument, it must be treated
+      // as a mutation point.
+      recordMutation(User);
+      
+      // Applying a function does not cause the function to escape.
       if (Op->getOperandNumber() == 0) {
-        recordMutation(User);
         continue;
       }
       // apply instructions do not capture the pointer when it is passed
@@ -686,7 +694,7 @@ static bool isPartialApplyNonCapturingUser(Operand *CurrentOp,
     captureArg.setMutating();
 
   // Check if the partial apply escapes and record any of its uses as mutations.
-  PartialApplyEscapeAnalysis escapeAnalysis(
+  PartialApplyEscapeAnalysis escapeAnalysis(PAI->getFunction(),
       captureArg.isMutating() ? &State.Mutations : nullptr);
 
   if (escapeAnalysis.computeMayEscape(PAI)) {
@@ -1014,6 +1022,7 @@ static bool examineAllocBoxInst(
       // exposure. Just mark it exposed since that's no less optimizable.
       if (captureArg.isMutating()) {
         captureArg.setExposed();
+        ++Iter;
         continue;
       }
       // Note: Once noescape closures are fixed to forward their capture values,
