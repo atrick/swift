@@ -628,9 +628,10 @@ static bool mayMutateCapture(SILArgument *BoxArg) {
     SILInstruction *AddrInst = AddrOper->getUser();
     if (auto *SEAI = dyn_cast<StructElementAddrInst>(AddrInst)) {
       for (auto *UseOper : SEAI->getUses()) {
-        if (isLoadFrom(UseOper))
-          return false;
+        if (!isLoadFrom(UseOper))
+          return true;
       }
+      return false;
     } else if (isLoadFrom(AddrOper) || isa<DebugValueAddrInst>(AddrInst)
                || isa<MarkFunctionEscapeInst>(AddrInst)
                || isa<EndAccessInst>(AddrInst)) {
