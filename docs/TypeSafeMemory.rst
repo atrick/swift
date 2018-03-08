@@ -14,32 +14,44 @@ rules. However, code that uses unsafe APIs or imported types can
 circumvent the language's natural type safety. Consider the following
 example of *type punning* using the ``UnsafePointer`` type::
 
-  let ptrT = UnsafeMutablePointer<T>(allocatingCapacity: 1)
+  let ptrT = UnsafeMutablePointer<T>.allocate(capacity: 1)
   // Store T at this address.
   ptrT[0] = T()
   // Load U at this address
-  let u = UnsafePointer<U>(ptrT)[0]
+  let ptrU = UnsafeRawPointer(ptrT).assumingMemoryBound(to: U.self)
+  let u = ptrU[0]
 
 The program exhibits undefined behavior unless ``T`` and ``U`` are
 `related types`_ and the loaded type ``U`` is **layout compatible**
 with the stored type ``T`` (see `Layout Compatible Types`_).
 
-.. note::
+Any typed memory access, either via a normal safe language construct or via ${Self}<T>, requires that the access type be compatible with the memory's currently "bound" type. Accessing the same memory location as two unrelated types can be done legally in one of two ways: rebinding memory to the unrelated type before accessing it, or accessing the memory through a raw pointer.
 
-   ``Unsafe[Mutable]Pointer`` needs to provide a type safe API. In
-   other words, when a program accesses memory via ``UnsafePointer``,
-   the ``UnsafePointer`` element should be consistent with the type
-   used to allocate the memory. The "unsafe" in ``UnsafePointer``
-   actually refers to memory management--it is the user's
-   responsibility to manage the object's lifetime. The type safety of
-   UnsafePointer is not only a desirable programming model, it is an
-   absolute requirement performance reasons, as ``UnsafePointer`` is
-   intended for high-performance implementation of data
-   structures. Converting between ``UnsafePointer`` values with
-   different ``Pointee`` types, as shown above, violates this type
-   safety, and will likely be disallowed in future versions of the API.
+1. Rebinding Memory
+   
+A memory location may only be bound to one type at a time. The same memory location may be "rebound" to an unrelated, layout compatible type. In the above example, the memory was implicitly bound to `T` when it was allocated::
 
- 
+  let ptrT = UnsafeMutablePointer<T>.allocate(capacity: 1)
+  // Store T at this address.
+  ptrT[0] = T()
+  // Load U at this address
+  let ptrU = UnsafeRawPointer(ptrT).bindMemory(to: U.self, capacity: 1)
+  let u = ptrU[0]
+
+This code is now well-defined even if ``T`` and ``U`` are unrelated types, as long as the are layout compatible.
+
+2. Circumventing Strict Aliasing with Raw Pointers
+
+See `SE-0107: UnsafeRawPointer API - Memory Model Explanation <https://github.com/apple/swift-evolution/blob/master/proposals/0107-unsaferawpointer.md#memory-model-explanation>`_.
+
+A raw pointer can be used to load and store values of any type from memory as long that type is layout compatible with the type of the value that was previously stored at the memory location::
+
+  let ptrT = UnsafeMutablePointer<T>.allocate(capacity: 1)
+  // Store T at this address.
+  ptrT[0] = T()
+  // Load U at this address
+  let u = UnsafeRawPointer(ptrT).load(fromByteOffset: 0, as: U.self)
+
 Related Types
 =============
 
@@ -178,8 +190,8 @@ the rules are extended to that allocated type:
 4. Loads must be layout compatible with the memory object's allocated type.
 5. Stores must be mutually layout compatible with the memory object's allocated type.
 
-Legally Circumventing Strict Aliasing
-=====================================
+Circumventing Strict Aliasing
+=============================
 
 Accessing unrelated layout compatible types requires special
 consideration. For example, ``Int32`` and ``UInt32`` are "obviously" layout
