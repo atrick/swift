@@ -4580,7 +4580,7 @@ public:
   }
 
   void verifyBranches(const SILFunction *F) {
-    // Verify that there is no non_condbr critical edge.
+    // Verify no critical edge.
     auto isCriticalEdgePred = [](const TermInst *T, unsigned EdgeIdx) {
       assert(T->getSuccessors().size() > EdgeIdx && "Not enough successors");
 
@@ -4603,39 +4603,9 @@ public:
       const TermInst *TI = BB.getTerminator();
       CurInstruction = TI;
 
-      // Check for non-cond_br critical edges.
-      auto *CBI = dyn_cast<CondBranchInst>(TI);
-      if (!CBI) {
-        for (unsigned Idx = 0, e = BB.getSuccessors().size(); Idx != e; ++Idx) {
-          require(!isCriticalEdgePred(TI, Idx),
-                  "non cond_br critical edges not allowed");
-        }
-        continue;
-      }
-      // In ownership qualified SIL, ban critical edges from CondBranchInst that
-      // have non-trivial arguments.
-      //
-      // FIXME: it would be far simpler to ban all critical edges in general.
-      if (!F->hasQualifiedOwnership())
-        continue;
-
-      if (isCriticalEdgePred(CBI, CondBranchInst::TrueIdx)) {
-        require(
-            llvm::all_of(CBI->getTrueArgs(),
-                         [](SILValue V) -> bool {
-                           return V.getOwnershipKind() ==
-                                  ValueOwnershipKind::Trivial;
-                         }),
-            "cond_br with critical edges must not have a non-trivial value");
-      }
-      if (isCriticalEdgePred(CBI, CondBranchInst::FalseIdx)) {
-        require(
-            llvm::all_of(CBI->getFalseArgs(),
-                         [](SILValue V) -> bool {
-                           return V.getOwnershipKind() ==
-                                  ValueOwnershipKind::Trivial;
-                         }),
-            "cond_br with critical edges must not have a non-trivial value");
+      for (unsigned Idx = 0, e = BB.getSuccessors().size(); Idx != e; ++Idx) {
+        require(!isCriticalEdgePred(TI, Idx),
+                "non cond_br critical edges not allowed");
       }
     }
   }
