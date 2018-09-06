@@ -153,24 +153,13 @@ void CleanupManager::emitCleanupsForReturn(CleanupLocation loc,
   emitCleanups(stack.stable_end(), loc, forUnwind, /*popCleanups=*/false);
 }
 
-/// Emit a new block that jumps to the specified location and runs necessary
-/// cleanups based on its level.  If there are no cleanups to run, this just
-/// returns the dest block.
-SILBasicBlock *CleanupManager::emitBlockForCleanups(JumpDest dest,
-                                                    SILLocation branchLoc,
-                                                    ArrayRef<SILValue> args,
-                                                    ForUnwind_t forUnwind) {
-  // If there are no cleanups to run, just return the Dest block directly.
-  if (!hasAnyActiveCleanups(dest.getDepth()))
-    return dest.getBlock();
-
-  // Otherwise, create and emit a new block.
-  auto *newBlock = SGF.createBasicBlock();
-  SILGenSavedInsertionPoint IPRAII(SGF, newBlock);
-  emitBranchAndCleanups(dest, branchLoc, args, forUnwind);
-  return newBlock;
+void CleanupManager::emitCleanupsForDest(JumpDest dest) {
+  SILGenSavedInsertionPoint IP(SGF, dest.getBlock());
+  SILGenBuilder &builder = SGF.getBuilder();
+  assert(builder.hasValidInsertionPoint() && "Cleanup in invalid spot");
+  emitCleanups(dest.getDepth(), dest.getCleanupLocation(),
+               NotForUnwind, /*popCleanups=*/false);
 }
-
 
 Cleanup &CleanupManager::initCleanup(Cleanup &cleanup,
                                      size_t allocSize,

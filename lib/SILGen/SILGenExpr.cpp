@@ -4093,9 +4093,9 @@ RValue RValueEmitter::visitRebindSelfInConstructorExpr(
 
     assert(SGF.FailDest.isValid() && "too big to fail");
 
-    auto noneBB = SGF.Cleanups.emitBlockForCleanups(SGF.FailDest, E);
+    SGF.Cleanups.emitCleanupsForDest(SGF.FailDest);
 
-    SGF.B.createCondBranch(E, hasValue, someBB, noneBB);
+    SGF.B.createCondBranch(E, hasValue, someBB, SGF.FailDest.getBlock());
 
     // Otherwise, project out the value and carry on.
     SGF.B.emitBlock(someBB);
@@ -4629,8 +4629,8 @@ void SILGenFunction::emitBindOptionalAddress(SILLocation loc,
   SILBasicBlock *someBB = createBasicBlock();
   SILValue hasValue = emitDoesOptionalHaveValue(loc, optAddress.getValue());
 
-  auto noneBB = Cleanups.emitBlockForCleanups(failureDest, loc);
-  B.createCondBranch(loc, hasValue, someBB, noneBB);
+  Cleanups.emitCleanupsForDest(failureDest);
+  B.createCondBranch(loc, hasValue, someBB, failureDest.getBlock());
 
   // Reset the insertion point at the end of hasValueBB so we can
   // continue to emit code there.

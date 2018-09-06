@@ -722,8 +722,9 @@ copyOrInitValueInto(SILGenFunction &SGF, SILLocation loc,
   }
 
   SILBasicBlock *contBB = SGF.B.splitBlockForFallthrough();
-  auto falseBB = SGF.Cleanups.emitBlockForCleanups(getFailureDest(), loc);
-  SGF.B.createCondBranch(loc, testBool, contBB, falseBB);
+  SGF.Cleanups.emitCleanupsForDest(getFailureDest());
+  auto failBB = getFailureDest().getBlock();
+  SGF.B.createCondBranch(loc, testBool, contBB, failBB);
 
   SGF.B.setInsertionPoint(contBB);
 }
@@ -1021,7 +1022,8 @@ copyOrInitValueInto(SILGenFunction &SGF, SILLocation loc,
   // Branch on the boolean based on whether we're testing for true or false.
   SILBasicBlock *trueBB = SGF.B.splitBlockForFallthrough();
   auto contBB = trueBB;
-  auto falseBB = SGF.Cleanups.emitBlockForCleanups(getFailureDest(), loc);
+  auto falseBB = getFailureDest().getBlock();
+  SGF.Cleanups.emitCleanupsForDest(getFailureDest());
 
   if (!pattern->getValue())
     std::swap(trueBB, falseBB);
@@ -1311,9 +1313,9 @@ void SILGenFunction::emitStmtCondition(StmtCondition Cond, JumpDest FailDest,
     // Just branch on the condition.  On failure, we unwind any active cleanups,
     // on success we fall through to a new block.
     SILBasicBlock *ContBB = createBasicBlock();
-    auto FailBB = Cleanups.emitBlockForCleanups(FailDest, loc);
-    B.createCondBranch(booleanTestLoc, booleanTestValue, ContBB, FailBB,
-                       NumTrueTaken, NumFalseTaken);
+    Cleanups.emitCleanupsForDest(FailDest);
+    B.createCondBranch(booleanTestLoc, booleanTestValue, ContBB,
+                       FailDest.getBlock(), NumTrueTaken, NumFalseTaken);
 
     // Finally, emit the continue block and keep emitting the rest of the
     // condition.

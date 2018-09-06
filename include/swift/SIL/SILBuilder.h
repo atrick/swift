@@ -362,6 +362,23 @@ public:
   /// continuation block.
   SILBasicBlock *splitBlockForFallthrough();
 
+  /// Create a new basic block and terminate `sourceBB` with a branch to the
+  /// newly created block, all while ignoring the current insertion point.
+  ///
+  /// This is a convenience to avoid managing multiple insertion points when
+  /// generating a control flow hammock where interesting instructions are only
+  /// emitted on one side of the branch.
+  ///
+  /// !!! Is this used?
+  SILBasicBlock *generateFallThruBlock(SILBasicBlock *sourceBB,
+                                       SILLocation loc);
+
+  /// Generate a branch from `sourceBB` to `destBB` without using or modifying
+  /// the insertion point.
+  SILBasicBlock *generateBranch(SILBasicBlock *sourceBB,
+                                SILBasicBlock *destBB,
+                                SILLocation loc);
+
   //===--------------------------------------------------------------------===//
   // SILInstruction Creation Methods
   //===--------------------------------------------------------------------===//

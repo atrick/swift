@@ -593,7 +593,7 @@ bool SimplifyCFG::dominatorBasedSimplifications(SILFunction &Fn,
     ThreadInfo.threadEdge();
     Changed = true;
   }
-
+  Fn.verifyCriticalEdges();
   return Changed;
 }
 
@@ -707,6 +707,7 @@ bool SimplifyCFG::dominatorBasedSimplify(DominanceAnalysis *DA) {
 
   if (ShouldVerify)
     DT->verify();
+  Fn.verifyCriticalEdges();
 
   // The functions we used to simplify the CFG put things in the worklist. Clear
   // it here.
@@ -1473,7 +1474,7 @@ bool SimplifyCFG::simplifyCondBrBlock(CondBranchInst *BI) {
   // If the destination block is a simple trampoline (jump to another block)
   // then jump directly.
   SILBasicBlock *TrueTrampolineDest = getTrampolineDest(TrueSide);
-  if (TrueTrampolineDest && TrueTrampolineDest != FalseSide) {
+  if (TrueTrampolineDest && TrueTrampolineDest->getSinglePredecessorBlock()) {
     LLVM_DEBUG(llvm::dbgs() << "true-trampoline from bb" << ThisBB->getDebugID()
                             << " to bb" << TrueTrampolineDest->getDebugID()
                             << '\n');
@@ -1490,7 +1491,7 @@ bool SimplifyCFG::simplifyCondBrBlock(CondBranchInst *BI) {
   }
 
   SILBasicBlock *FalseTrampolineDest = getTrampolineDest(FalseSide);
-  if (FalseTrampolineDest && FalseTrampolineDest != TrueSide) {
+  if (FalseTrampolineDest && FalseTrampolineDest->getSinglePredecessorBlock()) {
     LLVM_DEBUG(llvm::dbgs() << "false-trampoline from bb"
                             << ThisBB->getDebugID() << " to bb"
                             << FalseTrampolineDest->getDebugID() << '\n');
@@ -2260,13 +2261,16 @@ bool SimplifyCFG::simplifyBlocks() {
     switch (TI->getTermKind()) {
     case TermKind::BranchInst:
       Changed |= simplifyBranchBlock(cast<BranchInst>(TI));
+      Fn.verifyCriticalEdges();
       break;
     case TermKind::CondBranchInst:
       Changed |= simplifyCondBrBlock(cast<CondBranchInst>(TI));
+      Fn.verifyCriticalEdges();
       break;
     case TermKind::SwitchValueInst:
       // FIXME: Optimize for known switch values.
       Changed |= simplifySwitchValueBlock(cast<SwitchValueInst>(TI));
+      Fn.verifyCriticalEdges();
       break;
     case TermKind::SwitchEnumInst: {
       auto *SEI = cast<SwitchEnumInst>(TI);
@@ -2276,26 +2280,33 @@ bool SimplifyCFG::simplifyBlocks() {
         Changed |= simplifySwitchEnumUnreachableBlocks(SEI);
       }
       Changed |= simplifyTermWithIdenticalDestBlocks(BB);
+      Fn.verifyCriticalEdges();
       break;
     }
     case TermKind::UnreachableInst:
       Changed |= simplifyUnreachableBlock(cast<UnreachableInst>(TI));
+      Fn.verifyCriticalEdges();
       break;
     case TermKind::CheckedCastBranchInst:
       Changed |= simplifyCheckedCastBranchBlock(cast<CheckedCastBranchInst>(TI));
+      Fn.verifyCriticalEdges();
       break;
     case TermKind::CheckedCastValueBranchInst:
       Changed |= simplifyCheckedCastValueBranchBlock(
           cast<CheckedCastValueBranchInst>(TI));
+      Fn.verifyCriticalEdges();
       break;
     case TermKind::CheckedCastAddrBranchInst:
       Changed |= simplifyCheckedCastAddrBranchBlock(cast<CheckedCastAddrBranchInst>(TI));
+      Fn.verifyCriticalEdges();
       break;
     case TermKind::TryApplyInst:
       Changed |= simplifyTryApplyBlock(cast<TryApplyInst>(TI));
+      Fn.verifyCriticalEdges();
       break;
     case TermKind::SwitchEnumAddrInst:
       Changed |= simplifyTermWithIdenticalDestBlocks(BB);
+      Fn.verifyCriticalEdges();
       break;
     case TermKind::ThrowInst:
     case TermKind::DynamicMethodBranchInst:
@@ -2306,14 +2317,17 @@ bool SimplifyCFG::simplifyBlocks() {
     }
     // If the block has a cond_fail, try to move it to the predecessors.
     Changed |= tryMoveCondFailToPreds(BB);
+      Fn.verifyCriticalEdges();
 
     // Simplify the block argument list.
     Changed |= simplifyArgs(BB);
+      Fn.verifyCriticalEdges();
 
     // Simplify the program termination block.
     Changed |= simplifyProgramTerminationBlock(BB);
+      Fn.verifyCriticalEdges();
   }
-
+  Fn.verifyCriticalEdges();
   return Changed;
 }
 
@@ -2856,14 +2870,15 @@ bool SimplifyCFG::run() {
   }
 
   if (tailDuplicateObjCMethodCallSuccessorBlocks()) {
+    Fn.verifyCriticalEdges();
     Changed = true;
     if (simplifyBlocks())
       removeUnreachableBlocks(Fn);
   }
-  Fn.verifyCriticalEdges();
 
   // Canonicalize switch_enum instructions.
   Changed |= canonicalizeSwitchEnums();
+  Fn.verifyCriticalEdges();
   
   return Changed;
 }

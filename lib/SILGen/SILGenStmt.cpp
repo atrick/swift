@@ -507,8 +507,7 @@ void StmtEmitter::visitDeferStmt(DeferStmt *S) {
 void StmtEmitter::visitIfStmt(IfStmt *S) {
   Scope condBufferScope(SGF.Cleanups, S);
   
-  // Create a continuation block.  We need it if there is a labeled break out
-  // of the if statement or if there is an if/then/else.
+  // Create a continuation block.
   JumpDest contDest = createJumpDest(S->getThenStmt());
   auto contBB = contDest.getBlock();
 
@@ -517,11 +516,8 @@ void StmtEmitter::visitIfStmt(IfStmt *S) {
   SGF.BreakContinueDestStack.push_back(
                                { S, contDest, JumpDest(CleanupLocation(S)) });
 
-  // Set up the block for the false case.  If there is an 'else' block, we make
-  // a new one, otherwise it is our continue block.
-  JumpDest falseDest = contDest;
-  if (S->getElseStmt())
-    falseDest = createJumpDest(S);
+  // Set up the block for the false case.
+  JumpDest falseDest = createJumpDest(S);
 
   // Emit the condition, along with the "then" part of the if properly guarded
   // by the condition and a jump to ContBB.  If the condition fails, jump to
@@ -549,21 +545,23 @@ void StmtEmitter::visitIfStmt(IfStmt *S) {
     }
   }
   
+  SGF.B.emitBlock(falseDest.getBlock());
+
   // If there is 'else' logic, then emit it.
-  if (S->getElseStmt()) {
-    SGF.B.emitBlock(falseDest.getBlock());
+  if (S->getElseStmt())
     visit(S->getElseStmt());
-    if (SGF.B.hasValidInsertionPoint()) {
-      RegularLocation L(S->getElseStmt());
-      L.pointToEnd();
-      SGF.B.createBranch(L, contBB);
-    }
+
+  if (SGF.B.hasValidInsertionPoint()) {
+    RegularLocation L(S->getElseStmt());
+    L.pointToEnd();
+    SGF.B.createBranch(L, contBB);
   }
 
   // If the continuation block was used, emit it now, otherwise remove it.
   if (contBB->pred_empty()) {
     SGF.eraseBasicBlock(contBB);
   } else {
+    // Emit the continuation block.
     RegularLocation L(S->getThenStmt());
     L.pointToEnd();
     SGF.B.emitBlock(contBB, L);
@@ -616,14 +614,18 @@ void StmtEmitter::visitWhileStmt(WhileStmt *S) {
   SGF.BreakContinueDestStack.push_back({S, breakDest, loopDest});
   
   // Evaluate the condition, the body, and a branch back to LoopBB when the
-  // condition is true.  On failure, jump to BreakBB.
+  // condition is true.  On failure, jump to exitDest.
   {
+    JumpDest exitDest = createJumpDest(S->getBody());
+
     // Enter a scope for any bound pattern variables.
     Scope conditionScope(SGF.Cleanups, S);
 
     auto NumTrueTaken = SGF.loadProfilerCount(S->getBody());
     auto NumFalseTaken = SGF.loadProfilerCount(S);
-    SGF.emitStmtCondition(S->getCond(), breakDest, S, NumTrueTaken, NumFalseTaken);
+    SGF.emitStmtCondition(S->getCond(), exitDest, S, NumTrueTaken, NumFalseTaken);
+    // ExitDest now has all its cleanup. Link it to breakBB.
+    SGF.B.generateBranch(exitDest.getBlock(), breakDest.getBlock(), S);
     
     // In the success path, emit the body of the while.
     SGF.emitProfilerIncrement(S->getBody());
