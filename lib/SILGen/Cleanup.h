@@ -180,7 +180,7 @@ public:
 
   /// Emit cleanups for `cleanupDest`. This does not use and has no effect on
   /// the current SILBuilder insertion point.
-  void emitCleanupsForDest(JumpDest dest);
+  void emitCleanupsInDest(JumpDest dest);
 
   /// pushCleanup - Push a new cleanup.
   template<class T, class... A>

@@ -153,7 +153,7 @@ void CleanupManager::emitCleanupsForReturn(CleanupLocation loc,
   emitCleanups(stack.stable_end(), loc, forUnwind, /*popCleanups=*/false);
 }
 
-void CleanupManager::emitCleanupsForDest(JumpDest dest) {
+void CleanupManager::emitCleanupsInDest(JumpDest dest) {
   SILGenSavedInsertionPoint IP(SGF, dest.getBlock());
   SILGenBuilder &builder = SGF.getBuilder();
   assert(builder.hasValidInsertionPoint() && "Cleanup in invalid spot");
