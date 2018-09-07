@@ -4093,9 +4093,8 @@ RValue RValueEmitter::visitRebindSelfInConstructorExpr(
 
     assert(SGF.FailDest.isValid() && "too big to fail");
 
-    SGF.Cleanups.emitCleanupsInDest(SGF.FailDest);
-
-    SGF.B.createCondBranch(E, hasValue, someBB, SGF.FailDest.getBlock());
+    auto noneBB = SGF.Cleanups.emitBlockForCleanups(SGF.FailDest, E);
+    SGF.B.createCondBranch(E, hasValue, someBB, noneBB);
 
     // Otherwise, project out the value and carry on.
     SGF.B.emitBlock(someBB);

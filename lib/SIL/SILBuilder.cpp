@@ -181,14 +181,6 @@ SILBasicBlock *SILBuilder::splitBlockForFallthrough() {
   return NewBB;
 }
 
-SILBasicBlock *SILBuilder::generateFallThruBlock(SILBasicBlock *sourceBB,
-                                                 SILLocation loc) {
-  SavedInsertionPointRAII savedIP(*this, sourceBB);
-  auto *contBB = F->createBasicBlock();
-  createBranch(loc, contBB);
-  return contBB;
-}
-
 SILBasicBlock *SILBuilder::generateBranch(SILBasicBlock *sourceBB,
                                           SILBasicBlock *destBB,
                                           SILLocation loc) {

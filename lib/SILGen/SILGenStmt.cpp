@@ -576,10 +576,16 @@ void StmtEmitter::visitGuardStmt(GuardStmt *S) {
   JumpDest bodyBB =
     JumpDest(createBasicBlock(), SGF.getCleanupsDepth(), CleanupLocation(S));
 
+  // Emit the condition bindings, branching to the bodyBB if they fail.  Since
+  // we didn't push a scope, the bound variables are live after this statement.
+  auto NumFalseTaken = SGF.loadProfilerCount(S->getBody());
+  auto NumNonTaken = SGF.loadProfilerCount(S);
+  SGF.emitStmtCondition(S->getCond(), bodyBB, S, NumNonTaken, NumFalseTaken);
   {
-    // Move the insertion point to the 'body' block temporarily and emit it.
-    // Note that we don't push break/continue locations since they aren't valid
-    // in this statement.
+    // Now that cleanups are emitted on bodyBB for the condition, move the
+    // insertion point to the 'body' block temporarily and emit it.  Note that
+    // we don't push break/continue locations since they aren't valid in this
+    // statement.
     SILGenSavedInsertionPoint savedIP(SGF, bodyBB.getBlock());
     SGF.emitProfilerIncrement(S->getBody());
     SGF.emitStmt(S->getBody());
@@ -590,12 +596,6 @@ void StmtEmitter::visitGuardStmt(GuardStmt *S) {
     if (SGF.B.hasValidInsertionPoint())
       SGF.B.createUnreachable(S);
   }
-
-  // Emit the condition bindings, branching to the bodyBB if they fail.  Since
-  // we didn't push a scope, the bound variables are live after this statement.
-  auto NumFalseTaken = SGF.loadProfilerCount(S->getBody());
-  auto NumNonTaken = SGF.loadProfilerCount(S);
-  SGF.emitStmtCondition(S->getCond(), bodyBB, S, NumNonTaken, NumFalseTaken);
 }
 
 void StmtEmitter::visitWhileStmt(WhileStmt *S) {

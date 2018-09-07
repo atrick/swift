@@ -178,8 +178,16 @@ public:
   /// return from the function.
   void emitCleanupsForReturn(CleanupLocation loc, ForUnwind_t forUnwind);
 
-  /// Emit cleanups for `cleanupDest`. This does not use and has no effect on
-  /// the current SILBuilder insertion point.
+  /// Emit a new block that jumps to the specified location and runs necessary
+  /// cleanups based on its level.  If there are no cleanups to run, this just
+  /// returns the dest block.
+  SILBasicBlock *emitBlockForCleanups(JumpDest dest, SILLocation branchLoc,
+                                      ArrayRef<SILValue> args = {},
+                                      ForUnwind_t forUnwind = NotForUnwind);
+
+  /// Emit all the cleanups that have been pushed since JumpDest was
+  /// created. Insert them at the head of JumpDest's block. This does not use
+  /// and has no effect on the current SILBuilder insertion point.
   void emitCleanupsInDest(JumpDest dest);
 
   /// pushCleanup - Push a new cleanup.
