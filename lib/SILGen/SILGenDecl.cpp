@@ -1256,7 +1256,7 @@ SILValue SILGenFunction::emitOSVersionRangeCheck(SILLocation loc,
 /// specified JumpDest.  The insertion point is left in the block where the
 /// condition has matched and any bound variables are in scope.
 ///
-void SILGenFunction::emitStmtCondition(StmtCondition Cond, JumpDest FailDest,
+void SILGenFunction::emitStmtCondition(StmtCondition Cond, JumpDest FalseDest,
                                        SILLocation loc,
                                        ProfileCounter NumTrueTaken,
                                        ProfileCounter NumFalseTaken) {
@@ -1271,7 +1271,7 @@ void SILGenFunction::emitStmtCondition(StmtCondition Cond, JumpDest FailDest,
     switch (elt.getKind()) {
     case StmtConditionElement::CK_PatternBinding: {
       InitializationPtr initialization =
-      InitializationForPattern(*this, FailDest).visit(elt.getPattern());
+      InitializationForPattern(*this, FalseDest).visit(elt.getPattern());
 
       // Emit the initial value into the initialization.
       FullExpr Scope(Cleanups, CleanupLocation(elt.getInitializer()));
@@ -1313,9 +1313,9 @@ void SILGenFunction::emitStmtCondition(StmtCondition Cond, JumpDest FailDest,
     // Just branch on the condition.  On failure, we unwind any active cleanups,
     // on success we fall through to a new block.
     SILBasicBlock *ContBB = createBasicBlock();
-    Cleanups.emitCleanupsForDest(FailDest);
+    Cleanups.emitCleanupsForDest(FalseDest);
     B.createCondBranch(booleanTestLoc, booleanTestValue, ContBB,
-                       FailDest.getBlock(), NumTrueTaken, NumFalseTaken);
+                       FalseDest.getBlock(), NumTrueTaken, NumFalseTaken);
 
     // Finally, emit the continue block and keep emitting the rest of the
     // condition.
