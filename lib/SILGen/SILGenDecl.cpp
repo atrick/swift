@@ -813,7 +813,7 @@ void EnumElementPatternInitialization::emitEnumMatch(
   // *NOTE* This needs to be in reverse order to preserve the textual SIL.
   auto *contBlock = SGF.createBasicBlock();
   auto *someBlock = SGF.createBasicBlock();
-  auto *defaultBlock = SGF.createBasicBlock();
+  auto *defaultBlock = failureDest.getBlock(); //!!!
   auto *originalBlock = SGF.B.getInsertionBB();
 
   SwitchEnumBuilder switchBuilder(SGF.B, loc, value);
@@ -829,10 +829,11 @@ void EnumElementPatternInitialization::emitEnumMatch(
   // negative path... but the actual initialization happened on the positive
   // path, causing a use (the destroy on the negative path) to be created that
   // does not dominate its definition (in the positive path).
-  auto handler = [&SGF, &loc, &failureDest](ManagedValue mv,
-                                            SwitchCaseFullExpr &&expr) {
+  //!!!auto handler = [&SGF, &loc, &failureDest](ManagedValue mv,
+  auto handler = [&SGF, &failureDest](ManagedValue mv,
+                                      SwitchCaseFullExpr &&expr) {
     expr.exit();
-    SGF.Cleanups.emitBranchAndCleanups(failureDest, loc);
+    SGF.Cleanups.emitCleanupsInDest(failureDest);
   };
 
   // If we have a binary enum, do not emit a true default case. This ensures
@@ -1322,11 +1323,18 @@ void SILGenFunction::emitStmtCondition(ArrayRef<StmtConditionElement> Conds,
   if (Conds.size() == 1)
     return;
 
+  // Split the CFG edge from the current failure condition to FalseDest.
+  auto *newFalseBB = createBasicBlock();
+  FalseDest.getBlock()->replaceAllBranchUsesWith(newFalseBB);
+  SILGenBuilder(B, newFalseBB).createBranch(loc, FalseDest.getBlock());
+
   // Chain cleanup blocks to avoid emitting redundant cleanup code.
   auto *cleanupBB = createBasicBlock();
+  SILGenBuilder(B, cleanupBB).createBranch(loc, FalseDest.getBlock());
   auto cleanupLoc = CleanupLocation::get(loc);
-  B.generateBranch(cleanupBB, FalseDest.getBlock(), cleanupLoc);
   JumpDest cleanupDest(cleanupBB, getCleanupsDepth(), cleanupLoc);
+
+  // Recursively emit the remaining conditions.
   emitStmtCondition(Conds.drop_front(), cleanupDest, cleanupLoc, NumTrueTaken,
                     NumFalseTaken);
 }
