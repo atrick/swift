@@ -2261,16 +2261,13 @@ bool SimplifyCFG::simplifyBlocks() {
     switch (TI->getTermKind()) {
     case TermKind::BranchInst:
       Changed |= simplifyBranchBlock(cast<BranchInst>(TI));
-      Fn.verifyCriticalEdges();
       break;
     case TermKind::CondBranchInst:
       Changed |= simplifyCondBrBlock(cast<CondBranchInst>(TI));
-      Fn.verifyCriticalEdges();
       break;
     case TermKind::SwitchValueInst:
       // FIXME: Optimize for known switch values.
       Changed |= simplifySwitchValueBlock(cast<SwitchValueInst>(TI));
-      Fn.verifyCriticalEdges();
       break;
     case TermKind::SwitchEnumInst: {
       auto *SEI = cast<SwitchEnumInst>(TI);
@@ -2280,33 +2277,26 @@ bool SimplifyCFG::simplifyBlocks() {
         Changed |= simplifySwitchEnumUnreachableBlocks(SEI);
       }
       Changed |= simplifyTermWithIdenticalDestBlocks(BB);
-      Fn.verifyCriticalEdges();
       break;
     }
     case TermKind::UnreachableInst:
       Changed |= simplifyUnreachableBlock(cast<UnreachableInst>(TI));
-      Fn.verifyCriticalEdges();
       break;
     case TermKind::CheckedCastBranchInst:
       Changed |= simplifyCheckedCastBranchBlock(cast<CheckedCastBranchInst>(TI));
-      Fn.verifyCriticalEdges();
       break;
     case TermKind::CheckedCastValueBranchInst:
       Changed |= simplifyCheckedCastValueBranchBlock(
           cast<CheckedCastValueBranchInst>(TI));
-      Fn.verifyCriticalEdges();
       break;
     case TermKind::CheckedCastAddrBranchInst:
       Changed |= simplifyCheckedCastAddrBranchBlock(cast<CheckedCastAddrBranchInst>(TI));
-      Fn.verifyCriticalEdges();
       break;
     case TermKind::TryApplyInst:
       Changed |= simplifyTryApplyBlock(cast<TryApplyInst>(TI));
-      Fn.verifyCriticalEdges();
       break;
     case TermKind::SwitchEnumAddrInst:
       Changed |= simplifyTermWithIdenticalDestBlocks(BB);
-      Fn.verifyCriticalEdges();
       break;
     case TermKind::ThrowInst:
     case TermKind::DynamicMethodBranchInst:
@@ -2317,15 +2307,12 @@ bool SimplifyCFG::simplifyBlocks() {
     }
     // If the block has a cond_fail, try to move it to the predecessors.
     Changed |= tryMoveCondFailToPreds(BB);
-      Fn.verifyCriticalEdges();
 
     // Simplify the block argument list.
     Changed |= simplifyArgs(BB);
-      Fn.verifyCriticalEdges();
 
     // Simplify the program termination block.
     Changed |= simplifyProgramTerminationBlock(BB);
-      Fn.verifyCriticalEdges();
   }
   Fn.verifyCriticalEdges();
   return Changed;
