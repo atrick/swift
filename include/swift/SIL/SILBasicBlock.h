@@ -325,6 +325,12 @@ public:
     return getTerminator()->getSuccessorBlocks();
   }
 
+  /// Replace all branches to this block with the given block.
+  ///
+  /// The client either guarantees that this block has no arguments or it must
+  /// update the arguments accordingly.
+  void replaceAllBranchUsesWith(SILBasicBlock *newBB);
+
   //===--------------------------------------------------------------------===//
   // Predecessors
   //===--------------------------------------------------------------------===//

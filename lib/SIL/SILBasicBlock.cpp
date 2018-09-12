@@ -122,6 +122,15 @@ void SILBasicBlock::eraseFromParent() {
   getParent()->getBlocks().erase(this);
 }
 
+void SILBasicBlock::replaceAllBranchUsesWith(SILBasicBlock *newBB) {
+  for (auto *predBB : getPredecessorBlocks()) {
+    for (auto &succ : predBB->getTerminator()->getSuccessors()) {
+      if (succ == this)
+        succ = newBB;
+    }
+  }
+}
+
 void SILBasicBlock::cloneArgumentList(SILBasicBlock *Other) {
   assert(Other->isEntry() == isEntry() &&
          "Expected to both blocks to be entries or not");
