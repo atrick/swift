@@ -178,6 +178,11 @@ public:
     setInsertionPoint(I);
   }
 
+  SILBuilder(SILBasicBlock *BB, SILBuilderContext &C)
+      : TempContext(C.getModule()), C(C), F(BB->getParent()) {
+    setInsertionPoint(BB);
+  }
+
   // Allow a pass to override the current SIL module conventions. This should
   // only be done by a pass responsible for lowering SIL to a new stage
   // (e.g. AddressLowering).
@@ -361,12 +366,6 @@ public:
   /// instruction) then split the block at that instruction and return the
   /// continuation block.
   SILBasicBlock *splitBlockForFallthrough();
-
-  /// Generate a branch from `sourceBB` to `destBB` without using or modifying
-  /// the insertion point.
-  SILBasicBlock *generateBranch(SILBasicBlock *sourceBB,
-                                SILBasicBlock *destBB,
-                                SILLocation loc);
 
   //===--------------------------------------------------------------------===//
   // SILInstruction Creation Methods

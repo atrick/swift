@@ -181,14 +181,6 @@ SILBasicBlock *SILBuilder::splitBlockForFallthrough() {
   return NewBB;
 }
 
-SILBasicBlock *SILBuilder::generateBranch(SILBasicBlock *sourceBB,
-                                          SILBasicBlock *destBB,
-                                          SILLocation loc) {
-  SavedInsertionPointRAII savedIP(*this, sourceBB);
-  createBranch(loc, destBB);
-  return destBB;
-}
-
 static bool setAccessToDeinit(BeginAccessInst *beginAccess) {
   // It's possible that AllocBoxToStack could catch some cases that
   // AccessEnforcementSelection does not promote to [static]. Ultimately, this

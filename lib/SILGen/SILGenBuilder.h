@@ -63,6 +63,13 @@ public:
                 SILBasicBlock::iterator insertInst)
       : SILGenBuilder(SGF, &*insertBB, insertInst) {}
 
+  // Create a new builder, inheriting the given builder's context and debug
+  // scope.
+  SILGenBuilder(SILGenBuilder &builder, SILBasicBlock *insertBB)
+    : SILBuilder(insertBB, builder.getBuilderContext()), SGF(builder.SGF) {
+    setCurrentDebugScope(builder.getCurrentDebugScope());
+  }
+
   SILGenModule &getSILGenModule() const;
   SILGenFunction &getSILGenFunction() const { return SGF; }
 
