@@ -593,7 +593,7 @@ bool SimplifyCFG::dominatorBasedSimplifications(SILFunction &Fn,
     ThreadInfo.threadEdge();
     Changed = true;
   }
-
+  Fn.verifyCriticalEdges();
   return Changed;
 }
 
@@ -707,6 +707,7 @@ bool SimplifyCFG::dominatorBasedSimplify(DominanceAnalysis *DA) {
 
   if (ShouldVerify)
     DT->verify();
+  Fn.verifyCriticalEdges();
 
   // The functions we used to simplify the CFG put things in the worklist. Clear
   // it here.
@@ -1473,7 +1474,7 @@ bool SimplifyCFG::simplifyCondBrBlock(CondBranchInst *BI) {
   // If the destination block is a simple trampoline (jump to another block)
   // then jump directly.
   SILBasicBlock *TrueTrampolineDest = getTrampolineDest(TrueSide);
-  if (TrueTrampolineDest && TrueTrampolineDest != FalseSide) {
+  if (TrueTrampolineDest && TrueTrampolineDest->getSinglePredecessorBlock()) {
     LLVM_DEBUG(llvm::dbgs() << "true-trampoline from bb" << ThisBB->getDebugID()
                             << " to bb" << TrueTrampolineDest->getDebugID()
                             << '\n');
@@ -1490,7 +1491,7 @@ bool SimplifyCFG::simplifyCondBrBlock(CondBranchInst *BI) {
   }
 
   SILBasicBlock *FalseTrampolineDest = getTrampolineDest(FalseSide);
-  if (FalseTrampolineDest && FalseTrampolineDest != TrueSide) {
+  if (FalseTrampolineDest && FalseTrampolineDest->getSinglePredecessorBlock()) {
     LLVM_DEBUG(llvm::dbgs() << "false-trampoline from bb"
                             << ThisBB->getDebugID() << " to bb"
                             << FalseTrampolineDest->getDebugID() << '\n');
@@ -2313,7 +2314,7 @@ bool SimplifyCFG::simplifyBlocks() {
     // Simplify the program termination block.
     Changed |= simplifyProgramTerminationBlock(BB);
   }
-
+  Fn.verifyCriticalEdges();
   return Changed;
 }
 
@@ -2856,14 +2857,15 @@ bool SimplifyCFG::run() {
   }
 
   if (tailDuplicateObjCMethodCallSuccessorBlocks()) {
+    Fn.verifyCriticalEdges();
     Changed = true;
     if (simplifyBlocks())
       removeUnreachableBlocks(Fn);
   }
-  Fn.verifyCriticalEdges();
 
   // Canonicalize switch_enum instructions.
   Changed |= canonicalizeSwitchEnums();
+  Fn.verifyCriticalEdges();
   
   return Changed;
 }
