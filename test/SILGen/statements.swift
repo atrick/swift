@@ -333,7 +333,7 @@ func test_if_break(_ a : Bool) {
   // CHECK: [[LOOP]]:
   // CHECK: function_ref @$SSb21_getBuiltinLogicValue{{[_0-9a-zA-Z]*}}F
   // CHECK-NEXT: apply
-  // CHECK-NEXT: cond_br {{.*}}, [[LOOPTRUE:bb[0-9]+]], [[OUT:bb[0-9]+]]
+  // CHECK-NEXT: cond_br {{.*}}, [[LOOPTRUE:bb[0-9]+]], [[EXIT:bb[0-9]+]]
   while a {
     if a {
       foo()
@@ -349,11 +349,14 @@ func test_if_break(_ a : Bool) {
 
   // [[IFTRUE]]:
   // CHECK: function_ref statements.foo
-  // CHECK: br [[OUT]]
+  // CHECK: br [[OUT:bb[0-9]+]]
 
   // CHECK: [[IFFALSE]]:
   // CHECK: function_ref statements.foo
   // CHECK: br [[LOOP]]
+
+  // CHECK: [[EXIT]]:
+  // CHECK: br [[OUT]]
 
   // CHECK: [[OUT]]:
   // CHECK:   return
@@ -417,28 +420,34 @@ func test_do_labeled() {
     }
 
     // CHECK: bb3:
+    // CHECK: br bb4
+
+    // CHECK: bb4:
     // CHECK: integer_literal $Builtin.Int2048, 2
     // CHECK: [[BAR:%.*]] = function_ref @$S10statements3baryySiF
     // CHECK: apply [[BAR]](
     bar(2)
 
     // CHECK: [[GLOBAL:%.*]] = function_ref @$S10statements11global_condSbvau
-    // CHECK: cond_br {{%.*}}, bb4, bb5
+    // CHECK: cond_br {{%.*}}, bb5, bb6
     if (global_cond) {
-      // CHECK: bb4:
+      // CHECK: bb5:
       // CHECK: destroy_value [[OBJ]]
-      // CHECK: br bb6
+      // CHECK: br bb8
       break lbl
     }
 
-    // CHECK: bb5:
+    // CHECK: bb6:
+    // CHECK: br bb7
+
+    // CHECK: bb7:
     // CHECK: integer_literal $Builtin.Int2048, 3
     // CHECK: [[BAR:%.*]] = function_ref @$S10statements3baryySiF
     // CHECK: apply [[BAR]](
     bar(3)
 
     // CHECK: destroy_value [[OBJ]]
-    // CHECK: br bb6
+    // CHECK: br bb8
   }
 
   // CHECK: integer_literal $Builtin.Int2048, 4
@@ -489,13 +498,16 @@ func defer_test2(_ cond : Bool) {
 
   // CHECK: [[C1:%.*]] = function_ref @$S10statements11defer_test2yySbF6
   // CHECK: apply [[C1]]
-  // CHECK: br [[EXIT]]
+  // CHECK: br [[RETURN:bb[0-9]+]]
     defer { callee1() }
     callee2()
     break
   }
   
 // CHECK: [[EXIT]]:
+// CHECK: br [[RETURN]]
+
+// CHECK: [[RETURN]]:
 // CHECK: [[C3:%.*]] = function_ref @{{.*}}callee3yyF
 // CHECK: apply [[C3]]
 
