@@ -242,6 +242,7 @@ bool swift::canonicalizeLoop(SILLoop *L, DominanceInfo *DT, SILLoopInfo *LI) {
   if (!L->getLoopLatch())
     ChangedCFG |= (insertBackedgeBlock(L, DT, LI) != nullptr);
 
+  L->getHeader()->getParent()->verifyCriticalEdges();
   return ChangedCFG;
 }
 
