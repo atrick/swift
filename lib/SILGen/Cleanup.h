@@ -136,7 +136,8 @@ class LLVM_LIBRARY_VISIBILITY CleanupManager {
 
   void popTopDeadCleanups(CleanupsDepth end);
   void emitCleanups(CleanupsDepth depth, CleanupLocation l,
-                    ForUnwind_t forUnwind, bool popCleanups);
+                    ForUnwind_t forUnwind, bool popCleanups,
+                    CleanupsDepth chainDepth = CleanupsDepth::invalid());
   void endScope(CleanupsDepth depth, CleanupLocation l);
 
   Cleanup &initCleanup(Cleanup &cleanup, size_t allocSize, CleanupState state);
