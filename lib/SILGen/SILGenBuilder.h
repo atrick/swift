@@ -66,9 +66,10 @@ public:
   // Create a new builder, inheriting the given builder's context and debug
   // scope.
   SILGenBuilder(SILGenBuilder &builder, SILBasicBlock *insertBB)
-    : SILBuilder(insertBB, builder.getBuilderContext()), SGF(builder.SGF) {
-    setCurrentDebugScope(builder.getCurrentDebugScope());
-  }
+    : SILBuilder(insertBB, builder.getCurrentDebugScope(),
+                 builder.getBuilderContext()),
+      SGF(builder.SGF)
+  {}
 
   SILGenModule &getSILGenModule() const;
   SILGenFunction &getSILGenFunction() const { return SGF; }
