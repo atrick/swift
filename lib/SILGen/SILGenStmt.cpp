@@ -313,7 +313,8 @@ prepareIndirectResultInit(SILGenFunction &SGF, CanType resultType,
       auto eltInit = prepareIndirectResultInit(SGF, resultEltType, allResults,
                                                directResults,
                                                indirectResultAddrs, cleanups);
-      tupleInit->SubInitializations.push_back(std::move(eltInit));
+      tupleInit->SubInitializations.emplace_back(std::move(eltInit),
+                                                 JumpDest());
     }
 
     return InitializationPtr(tupleInit);

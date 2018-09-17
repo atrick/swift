@@ -278,8 +278,8 @@ RValue Transform::transform(RValue &&input,
 
   // Emit into the context initialization if it's present and possible
   // to split.
-  SmallVector<InitializationPtr, 4> eltInitsBuffer;
-  MutableArrayRef<InitializationPtr> eltInits;
+  SmallVector<Initialization::ChainedSubInit, 4> eltInitsBuffer;
+  MutableArrayRef<Initialization::ChainedSubInit> eltInits;
   auto tupleInit = ctxt.getEmitInto();
   if (!ctxt.getEmitInto()
       || !ctxt.getEmitInto()->canSplitIntoTupleElements()) {
@@ -298,7 +298,8 @@ RValue Transform::transform(RValue &&input,
   for (auto eltIndex : indices(inputTupleType->getElementTypes())) {
     // Determine the appropriate context for the element.
     SGFContext eltCtxt;
-    if (tupleInit) eltCtxt = SGFContext(eltInits[eltIndex].get());
+    if (tupleInit)
+      eltCtxt = SGFContext(eltInits[eltIndex].subInit.get());
 
     // Recurse.
     RValue outputElt = transform(std::move(inputElts[eltIndex]),
@@ -311,7 +312,9 @@ RValue Transform::transform(RValue &&input,
     // Force the r-value into its context if necessary.
     assert(!outputElt.isInContext() || tupleInit != nullptr);
     if (tupleInit && !outputElt.isInContext()) {
-      std::move(outputElt).forwardInto(SGF, Loc, eltInits[eltIndex].get());
+      std::move(outputElt).forwardInto(SGF, Loc,
+                                       eltInits[eltIndex].subInit.get());
+      SGF.Cleanups.emitCleanupsInDest(eltInits[eltIndex].chainedDest);
     } else {
       std::move(outputElt).getAll(outputExpansion);
     }

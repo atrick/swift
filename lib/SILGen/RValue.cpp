@@ -251,12 +251,15 @@ public:
 
   void visitTupleType(CanTupleType t, Initialization *address, SILLocation l) {
     assert(address->canSplitIntoTupleElements());
-    llvm::SmallVector<InitializationPtr, 4> buf;
+    llvm::SmallVector<Initialization::ChainedSubInit, 4> buf;
     auto bufResult = address->splitIntoTupleElements(SGF, l, t, buf);
 
     for (unsigned i : range(t->getNumElements())) {
       CanType fieldCanTy = t.getElementType(i);
-      this->visit(fieldCanTy, bufResult[i].get(), l);
+      // We only implode into a single buffer, so there should be no cleanup
+      // chain.
+      assert(!bufResult[i].chainedDest.isValid() && "unexpected cleanup chain");
+      this->visit(fieldCanTy, bufResult[i].subInit.get(), l);
     }
 
     address->finishInitialization(SGF);
@@ -347,16 +350,18 @@ static void copyOrInitValuesInto(Initialization *init,
   // If we can satisfy the tuple type by breaking up the aggregate
   // initialization, do so.
   if (!implodeTuple && init->canSplitIntoTupleElements()) {
-    SmallVector<InitializationPtr, 4> subInitBuf;
+    SmallVector<Initialization::ChainedSubInit, 4> subInitBuf;
     auto subInits = init->splitIntoTupleElements(SGF, loc, type, subInitBuf);
     
     assert(subInits.size() == tupleType->getNumElements() &&
            "initialization does not match tuple?!");
-    
-    for (unsigned i = 0, e = subInits.size(); i < e; ++i)
-      copyOrInitValuesInto<KIND>(subInits[i].get(), values,
-                                 tupleType.getElementType(i), loc, SGF);
 
+    for (unsigned i = 0, e = subInits.size(); i < e; ++i) {
+      Initialization::ChainedSubInit chainedSubInit = std::move(subInits[i]);
+      copyOrInitValuesInto<KIND>(chainedSubInit.subInit.get(), values,
+                                 tupleType.getElementType(i), loc, SGF);
+      SGF.Cleanups.emitCleanupsInDest(chainedSubInit.chainedDest);
+    }
     init->finishInitialization(SGF);
     return;
   }

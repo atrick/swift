@@ -137,12 +137,15 @@ ArgumentSource::getKnownTupleAsRValue(SILGenFunction &SGF, SGFContext C) && {
     if (auto init = C.getEmitInto()) {
       if (init->canSplitIntoTupleElements()) {
         // Split the tuple.
-        SmallVector<InitializationPtr, 4> scratch;
+        SmallVector<Initialization::ChainedSubInit, 4> scratch;
         auto eltInits = init->splitIntoTupleElements(SGF, loc, type, scratch);
 
         // Emit each element into the corresponding element initialization.
         for (auto i : indices(eltInits)) {
-          std::move(elements[i]).forwardInto(SGF, eltInits[i].get());
+          auto chainedSubInit = std::move(eltInits[i]);
+          std::move(elements[i]).forwardInto(SGF, chainedSubInit.subInit.get());
+          if (chainedSubInit.chainedDest.isValid())
+            SGF.Cleanups.emitCleanupsInDest(chainedSubInit.chainedDest);
         }
 
         // Finish initialization.

@@ -2205,14 +2205,16 @@ RValue RValueEmitter::visitTupleExpr(TupleExpr *E, SGFContext C) {
     }
 
     if (!implodeTuple && I->canSplitIntoTupleElements()) {
-      SmallVector<InitializationPtr, 4> subInitializationBuf;
+      SmallVector<Initialization::ChainedSubInit, 4> subInitializationBuf;
       auto subInitializations =
         I->splitIntoTupleElements(SGF, RegularLocation(E), type,
                                   subInitializationBuf);
       assert(subInitializations.size() == E->getElements().size() &&
              "initialization for tuple has wrong number of elements");
-      for (unsigned i = 0, size = subInitializations.size(); i < size; ++i)
-        SGF.emitExprInto(E->getElement(i), subInitializations[i].get());
+      for (unsigned i = 0, size = subInitializations.size(); i < size; ++i) {
+        SGF.emitExprInto(E->getElement(i), subInitializations[i].subInit.get());
+        SGF.Cleanups.emitCleanupsInDest(subInitializations[i].chainedDest);
+      }
       I->finishInitialization(SGF);
       return RValue::forInContext();
     }
@@ -2489,7 +2491,7 @@ static void emitTupleShuffleExprInto(RValueEmitter &emitter,
   (void) outerFields;
 
   // Decompose the initialization.
-  SmallVector<InitializationPtr, 4> outerInitsBuffer;
+  SmallVector<Initialization::ChainedSubInit, 4> outerInitsBuffer;
   auto outerInits =
     outerTupleInit->splitIntoTupleElements(emitter.SGF, RegularLocation(E),
                                            outerTuple, outerInitsBuffer);
@@ -2508,13 +2510,15 @@ static void emitTupleShuffleExprInto(RValueEmitter &emitter,
     auto innerMapping = E->getElementMapping()[outerIndex];
     assert(innerMapping >= 0 &&
            "non-argument tuple shuffle with default arguments or variadics?");
-    innerTupleInit.SubInitializations[innerMapping] =
-      std::move(outerInits[outerIndex]);
+    innerTupleInit.SubInitializations[innerMapping].subInit =
+        std::move(outerInits[outerIndex].subInit);
+    // A TupleInitialization with chained cleanups must be emitted in-order.
+    assert(!outerInits[outerIndex].chainedDest.isValid());
   }
 
 #ifndef NDEBUG
   for (auto &innerInit : innerTupleInit.SubInitializations) {
-    assert(innerInit != nullptr && "didn't map all inner elements");
+    assert(innerInit.subInit != nullptr && "didn't map all inner elements");
   }
 #endif
 
@@ -2531,8 +2535,14 @@ RValue RValueEmitter::visitTupleShuffleExpr(TupleShuffleExpr *E,
 
   // If we're emitting into an initialization, we can try shuffling the
   // elements of the initialization.
+  //
+  // Only optimize tuple shuffles when in-place initialization is supported,
+  // which guarantees that we don't have chained cleanups (a chained cleanup
+  // forces the order of initialization). Shuffling into a TupleInitialization,
+  // which chains cleanups, is not supported.
   if (Initialization *I = C.getEmitInto()) {
-    if (I->canSplitIntoTupleElements()) {
+    if (I->canSplitIntoTupleElements()
+        && I->canPerformInPlaceInitialization()) {
       emitTupleShuffleExprInto(*this, E, I);
       return RValue::forInContext();
     }
@@ -4094,6 +4104,7 @@ RValue RValueEmitter::visitRebindSelfInConstructorExpr(
     assert(SGF.FailDest.isValid() && "too big to fail");
 
     auto noneBB = SGF.Cleanups.emitBlockForCleanups(SGF.FailDest, E);
+
     SGF.B.createCondBranch(E, hasValue, someBB, noneBB);
 
     // Otherwise, project out the value and carry on.

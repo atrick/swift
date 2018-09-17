@@ -49,15 +49,15 @@ namespace {
     bool canSplitIntoTupleElements() const override {
       return true;
     }
-    
-    MutableArrayRef<InitializationPtr>
-    splitIntoTupleElements(SILGenFunction &SGF, SILLocation loc,
-                           CanType type,
-                           SmallVectorImpl<InitializationPtr> &buf) override {
+
+    MutableArrayRef<ChainedSubInit>
+    splitIntoTupleElements(SILGenFunction &SGF, SILLocation loc, CanType type,
+                           SmallVectorImpl<ChainedSubInit> &buf) override {
       // "Destructure" an ignored binding into multiple ignored bindings.
       for (auto fieldType : cast<TupleType>(type)->getElementTypes()) {
         (void) fieldType;
-        buf.push_back(InitializationPtr(new BlackHoleInitialization()));
+        buf.push_back(ChainedSubInit(
+            InitializationPtr(new BlackHoleInitialization()), JumpDest()));
       }
       return buf;
     }
@@ -75,15 +75,17 @@ namespace {
 
 static void copyOrInitValueIntoHelper(
     SILGenFunction &SGF, SILLocation loc, ManagedValue value, bool isInit,
-    ArrayRef<InitializationPtr> subInitializations,
+    ArrayRef<Initialization::ChainedSubInit> subInitializations,
     llvm::function_ref<ManagedValue(ManagedValue, unsigned, SILType)> func) {
   auto sourceType = value.getType().castTo<TupleType>();
   auto sourceSILType = value.getType();
   for (unsigned i = 0, e = sourceType->getNumElements(); i != e; ++i) {
     SILType fieldTy = sourceSILType.getTupleElementType(i);
     ManagedValue elt = func(value, i, fieldTy);
-    subInitializations[i]->copyOrInitValueInto(SGF, loc, elt, isInit);
-    subInitializations[i]->finishInitialization(SGF);
+    subInitializations[i].subInit->copyOrInitValueInto(SGF, loc, elt, isInit);
+    subInitializations[i].subInit->finishInitialization(SGF);
+    // Emit common cleanups for this failure path.
+    SGF.Cleanups.emitCleanupsInDest(subInitializations[i].chainedDest);
   }
 }
 
@@ -92,12 +94,19 @@ void TupleInitialization::copyOrInitValueInto(SILGenFunction &SGF,
                                               ManagedValue value, bool isInit) {
   // In the object case, emit a destructure operation and return.
   if (value.getType().isObject()) {
-    return SGF.B.emitDestructureValueOperation(
+    SGF.B.emitDestructureValueOperation(
         loc, value, [&](unsigned i, ManagedValue subValue) {
-          auto &subInit = SubInitializations[i];
-          subInit->copyOrInitValueInto(SGF, loc, subValue, isInit);
-          subInit->finishInitialization(SGF);
+          auto &chainedSubInit = SubInitializations[i];
+          chainedSubInit.subInit->copyOrInitValueInto(SGF, loc, subValue,
+                                                      isInit);
+          chainedSubInit.subInit->finishInitialization(SGF);
+          // Emit common cleanups for this failure path.
+          SGF.Cleanups.emitCleanupsInDest(chainedSubInit.chainedDest);
+          //!!!
+          llvm::dbgs() << "### Destructure cleanups:\n"
+                       << *chainedSubInit.chainedDest.getBlock();
         });
+    return;
   }
 
   // In the address case, we forward the underlying value and store it
@@ -105,7 +114,7 @@ void TupleInitialization::copyOrInitValueInto(SILGenFunction &SGF,
   // that we have a +1 value since we are forwarding into memory.
   assert(value.isPlusOne(SGF) && "Can not store a +0 value into memory?!");
   value = ManagedValue::forUnmanaged(value.forward(SGF));
-  return copyOrInitValueIntoHelper(
+  copyOrInitValueIntoHelper(
       SGF, loc, value, isInit, SubInitializations,
       [&](ManagedValue aggregate, unsigned i,
           SILType fieldType) -> ManagedValue {
@@ -121,7 +130,7 @@ void TupleInitialization::copyOrInitValueInto(SILGenFunction &SGF,
 
 void TupleInitialization::finishUninitialized(SILGenFunction &SGF) {
   for (auto &subInit : SubInitializations) {
-    subInit->finishUninitialized(SGF);
+    subInit.subInit->finishUninitialized(SGF);
   }
 }
 
@@ -153,22 +162,21 @@ void SILGenFunction::visitFuncDecl(FuncDecl *fd) {
   SGM.emitFunction(fd);
 }
 
-MutableArrayRef<InitializationPtr>
-SingleBufferInitialization::
-splitIntoTupleElements(SILGenFunction &SGF, SILLocation loc, CanType type,
-                       SmallVectorImpl<InitializationPtr> &buf) {
+MutableArrayRef<Initialization::ChainedSubInit>
+SingleBufferInitialization::splitIntoTupleElements(
+    SILGenFunction &SGF, SILLocation loc, CanType type,
+    SmallVectorImpl<ChainedSubInit> &buf) {
   assert(SplitCleanups.empty() && "getting sub-initializations twice?");
   auto address = getAddressForInPlaceInitialization(SGF, loc);
   return splitSingleBufferIntoTupleElements(SGF, loc, type, address,
                                             buf, SplitCleanups);
 }
 
-MutableArrayRef<InitializationPtr>
-SingleBufferInitialization::
-splitSingleBufferIntoTupleElements(SILGenFunction &SGF, SILLocation loc,
-                                   CanType type, SILValue baseAddr,
-                                   SmallVectorImpl<InitializationPtr> &buf,
-                     TinyPtrVector<CleanupHandle::AsPointer> &splitCleanups) {
+MutableArrayRef<Initialization::ChainedSubInit>
+SingleBufferInitialization::splitSingleBufferIntoTupleElements(
+    SILGenFunction &SGF, SILLocation loc, CanType type, SILValue baseAddr,
+    SmallVectorImpl<ChainedSubInit> &buf,
+    TinyPtrVector<CleanupHandle::AsPointer> &splitCleanups) {
   // Destructure the buffer into per-element buffers.
   for (auto i : indices(cast<TupleType>(type)->getElementTypes())) {
     // Project the element.
@@ -179,11 +187,13 @@ splitSingleBufferIntoTupleElements(SILGenFunction &SGF, SILLocation loc,
     auto eltInit = SGF.useBufferAsTemporary(eltAddr, eltTL);
 
     // Remember the element cleanup.
+    //
+    // FIXME: should we model these as chained cleanups instead?
     auto eltCleanup = eltInit->getInitializedCleanup();
     if (eltCleanup.isValid())
       splitCleanups.push_back(eltCleanup);
 
-    buf.emplace_back(eltInit.release());
+    buf.emplace_back(std::move(eltInit), JumpDest());
   }
 
   return buf;
@@ -558,10 +568,10 @@ public:
   bool canSplitIntoTupleElements() const override {
     return hasAddress();
   }
-  
-  MutableArrayRef<InitializationPtr>
+
+  MutableArrayRef<ChainedSubInit>
   splitIntoTupleElements(SILGenFunction &SGF, SILLocation loc, CanType type,
-                         SmallVectorImpl<InitializationPtr> &buf) override {
+                         SmallVectorImpl<ChainedSubInit> &buf) override {
     assert(SplitCleanups.empty());
     auto address = getAddressForInPlaceInitialization(SGF, loc);
     return SingleBufferInitialization
@@ -1046,12 +1056,34 @@ struct InitializationForPattern
 {
   SILGenFunction &SGF;
 
+  // Stack of cleanup destinations matching the depth of recursion in tuple
+  // patterns.
+  SmallVector<JumpDest, 4> failDestStack;
+
+  // `patternFailDest` may be an invalid JumpDest.
+  InitializationForPattern(SILGenFunction &SGF, JumpDest patternFailDest)
+      : SGF(SGF), failDestStack(1, patternFailDest) {}
+
   /// This is the place that should be jumped to if the pattern fails to match.
   /// This is invalid for irrefutable pattern initializations.
-  JumpDest patternFailDest;
+  /// Cleanups are emitted once by the caller. Each subexpression emits its own
+  /// cleanups specific to that subexpression.
+  JumpDest getFailDest() { return failDestStack.back(); }
 
-  InitializationForPattern(SILGenFunction &SGF, JumpDest patternFailDest)
-    : SGF(SGF), patternFailDest(patternFailDest) {}
+  // Create a failure destination for cleanups unique to a subexpression.
+  void pushFailDest() {
+    failDestStack.emplace_back(getFailDest().getBlock(), SGF.getCleanupsDepth(),
+                               getFailDest().getCleanupLocation());
+  }
+
+  void pushChainedFailDest() {
+    failDestStack.emplace_back(
+        SGF.createBasicBlockAndBranch(getFailDest().getCleanupLocation(),
+                                      getFailDest().getBlock()),
+        SGF.getCleanupsDepth(), getFailDest().getCleanupLocation());
+  }
+
+  void popFailDest() { failDestStack.pop_back(); }
 
   // Paren, Typed, and Var patterns are noops, just look through them.
   InitializationPtr visitParenPattern(ParenPattern *P) {
@@ -1082,12 +1114,27 @@ struct InitializationForPattern
     return SGF.emitInitializationForVarDecl(P->getDecl(), P->getDecl()->isLet());
   }
 
+  void pushTupleElements(MutableArrayRef<TuplePatternElt> elements,
+                         TupleInitialization *init) {
+    auto chainedDest = getFailDest();
+    chainedDest.setChainDepth(SGF.getCleanupsDepth());
+    pushFailDest();
+    init->SubInitializations.emplace_back(visit(elements[0].getPattern()),
+                                          chainedDest);
+    popFailDest();
+    if (elements.size() == 1)
+      return;
+
+    // Push a cleanup destination to be the new head of the cleanup chain.
+    pushChainedFailDest();
+    pushTupleElements(elements.drop_front(), init);
+    popFailDest();
+  }
   // Bind a tuple pattern by aggregating the component variables into a
   // TupleInitialization.
   InitializationPtr visitTuplePattern(TuplePattern *P) {
     TupleInitialization *init = new TupleInitialization();
-    for (auto &elt : P->getElements())
-      init->SubInitializations.push_back(visit(elt.getPattern()));
+    pushTupleElements(P->getElements(), init);
     return InitializationPtr(init);
   }
 
@@ -1095,30 +1142,28 @@ struct InitializationForPattern
     InitializationPtr subInit;
     if (auto *subP = P->getSubPattern())
       subInit = visit(subP);
-    auto *res = new EnumElementPatternInitialization(P->getElementDecl(),
-                                                     std::move(subInit),
-                                                     patternFailDest);
+    auto *res = new EnumElementPatternInitialization(
+        P->getElementDecl(), std::move(subInit), getFailDest());
     return InitializationPtr(res);
   }
   InitializationPtr visitOptionalSomePattern(OptionalSomePattern *P) {
     InitializationPtr subInit = visit(P->getSubPattern());
-    auto *res = new EnumElementPatternInitialization(P->getElementDecl(),
-                                                     std::move(subInit),
-                                                     patternFailDest);
+    auto *res = new EnumElementPatternInitialization(
+        P->getElementDecl(), std::move(subInit), getFailDest());
     return InitializationPtr(res);
   }
   InitializationPtr visitIsPattern(IsPattern *P) {
     InitializationPtr subInit;
     if (auto *subP = P->getSubPattern())
       subInit = visit(subP);
-    return InitializationPtr(new IsPatternInitialization(P, std::move(subInit),
-                                                         patternFailDest));
+    return InitializationPtr(
+        new IsPatternInitialization(P, std::move(subInit), getFailDest()));
   }
   InitializationPtr visitBoolPattern(BoolPattern *P) {
-    return InitializationPtr(new BoolPatternInitialization(P, patternFailDest));
+    return InitializationPtr(new BoolPatternInitialization(P, getFailDest()));
   }
   InitializationPtr visitExprPattern(ExprPattern *P) {
-    return InitializationPtr(new ExprPatternInitialization(P, patternFailDest));
+    return InitializationPtr(new ExprPatternInitialization(P, getFailDest()));
   }
 };
 

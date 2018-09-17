@@ -402,8 +402,8 @@ public:
 /// of a splittable tuple initialization.
 class TupleInitializationResultPlan final : public ResultPlan {
   Initialization *tupleInit;
-  SmallVector<InitializationPtr, 4> eltInitsBuffer;
-  MutableArrayRef<InitializationPtr> eltInits;
+  SmallVector<Initialization::ChainedSubInit, 4> eltInitsBuffer;
+  MutableArrayRef<Initialization::ChainedSubInit> eltInits;
   SmallVector<ResultPlanPtr, 4> eltPlans;
 
 public:
@@ -422,8 +422,10 @@ public:
     for (auto i : indices(substType->getElementTypes())) {
       AbstractionPattern origEltType = origType.getTupleElementType(i);
       CanType substEltType = substType.getElementType(i);
-      Initialization *eltInit = eltInits[i].get();
+      Initialization *eltInit = eltInits[i].subInit.get();
       eltPlans.push_back(builder.build(eltInit, origEltType, substEltType));
+      // We don't expect a TupleInitialization pattern here do we? !!!
+      assert(!eltInits[i].chainedDest.isValid() && "chained cleanup");
     }
   }
 

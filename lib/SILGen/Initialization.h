@@ -140,9 +140,9 @@ public:
   ///   with these initializations.
   /// \param loc The location for any instructions required to split the
   ///   initialization.
-  virtual MutableArrayRef<InitializationPtr>
+  virtual MutableArrayRef<ChainedSubInit>
   splitIntoTupleElements(SILGenFunction &SGF, SILLocation loc, CanType type,
-                         SmallVectorImpl<InitializationPtr> &buf) {
+                         SmallVectorImpl<ChainedSubInit> &buf) {
     llvm_unreachable("Must implement if canSplitIntoTupleElements "
                      "returns true");
   }
@@ -200,10 +200,10 @@ public:
   bool canSplitIntoTupleElements() const override {
     return true;
   }
-  
-  MutableArrayRef<InitializationPtr>
+
+  MutableArrayRef<ChainedSubInit>
   splitIntoTupleElements(SILGenFunction &SGF, SILLocation loc, CanType type,
-                         SmallVectorImpl<InitializationPtr> &buf) override;
+                         SmallVectorImpl<ChainedSubInit> &buf) override;
 
   void copyOrInitValueInto(SILGenFunction &SGF, SILLocation loc,
                            ManagedValue value, bool isInit) override {
@@ -221,11 +221,11 @@ public:
                                               bool isInit,
                                               SILValue bufferAddress);
 
-  static MutableArrayRef<InitializationPtr>
-  splitSingleBufferIntoTupleElements(SILGenFunction &SGF, SILLocation loc,
-                                     CanType type, SILValue bufferAddress,
-                                     SmallVectorImpl<InitializationPtr> &buf,
-                       TinyPtrVector<CleanupHandle::AsPointer> &splitCleanups);
+  static MutableArrayRef<Initialization::ChainedSubInit>
+  splitSingleBufferIntoTupleElements(
+      SILGenFunction &SGF, SILLocation loc, CanType type,
+      SILValue bufferAddress, SmallVectorImpl<ChainedSubInit> &buf,
+      TinyPtrVector<CleanupHandle::AsPointer> &splitCleanups);
 };
   
 /// This is an initialization for a specific address in memory.
@@ -289,17 +289,17 @@ public:
   /// The sub-Initializations aggregated by this tuple initialization.
   /// The TupleInitialization object takes ownership of Initializations pushed
   /// here.
-  SmallVector<InitializationPtr, 4> SubInitializations;
-    
+  SmallVector<ChainedSubInit, 4> SubInitializations;
+
   TupleInitialization() {}
 
   bool canSplitIntoTupleElements() const override {
     return true;
   }
-    
-  MutableArrayRef<InitializationPtr>
+
+  MutableArrayRef<ChainedSubInit>
   splitIntoTupleElements(SILGenFunction &SGF, SILLocation loc, CanType type,
-                         SmallVectorImpl<InitializationPtr> &buf) override {
+                         SmallVectorImpl<ChainedSubInit> &buf) override {
     return SubInitializations;
   }
 

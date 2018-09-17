@@ -1258,7 +1258,7 @@ void PatternMatchEmission::emitSpecializedDispatch(ClauseMatrix &clauses,
   //
   // since the cleanup state changes performed by ArgUnforwarder will
   // occur too late.
-  
+
   unsigned firstRow = lastRow;
 
   // Collect the rows to specialize.

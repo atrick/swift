@@ -670,14 +670,15 @@ static void copyBorrowedYieldsIntoTemporary(SILGenFunction &SGF,
   }
 
   assert(init->canSplitIntoTupleElements());
-  SmallVector<InitializationPtr, 4> scratch;
+  SmallVector<Initialization::ChainedSubInit, 4> scratch;
   auto eltInits =
     init->splitIntoTupleElements(SGF, loc, substFormalType, scratch);
   for (size_t i : indices(eltInits)) {
     auto origEltType = origFormalType.getTupleElementType(i);
     auto substEltType = cast<TupleType>(substFormalType).getElementType(i);
-    copyBorrowedYieldsIntoTemporary(SGF, loc, yields, origEltType,
-                                    substEltType, eltInits[i].get());
+    copyBorrowedYieldsIntoTemporary(SGF, loc, yields, origEltType, substEltType,
+                                    eltInits[i].subInit.get());
+    SGF.Cleanups.emitCleanupsInDest(eltInits[i].chainedDest);
   }
   init->finishInitialization(SGF);
 }
