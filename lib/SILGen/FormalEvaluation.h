@@ -170,7 +170,7 @@ public:
 ///
 /// *NOTE* All formal access contain a pointer to a cleanup in the normal
 /// cleanup stack. This is to ensure that when SILGen calls
-/// Cleanups.emitBranchAndCleanups (and other special cleanup code along error
+/// Cleanups.emitCleanupsAndBranch (and other special cleanup code along error
 /// edges), writebacks are properly created. What is key to notice is that all
 /// of these cleanup emission types are non-destructive. Contrast this with
 /// normal scope popping. In such a case, the scope pop is destructive. This

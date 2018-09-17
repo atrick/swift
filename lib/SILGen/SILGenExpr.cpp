@@ -4628,8 +4628,8 @@ void SILGenFunction::emitBindOptionalAddress(SILLocation loc,
   SILBasicBlock *someBB = createBasicBlock();
   SILValue hasValue = emitDoesOptionalHaveValue(loc, optAddress.getValue());
 
-  Cleanups.emitCleanupsInDest(failureDest);
-  B.createCondBranch(loc, hasValue, someBB, failureDest.getBlock());
+  auto noneBB = Cleanups.emitBlockForCleanups(failureDest, loc);
+  B.createCondBranch(loc, hasValue, someBB, noneBB);
 
   // Reset the insertion point at the end of hasValueBB so we can
   // continue to emit code there.

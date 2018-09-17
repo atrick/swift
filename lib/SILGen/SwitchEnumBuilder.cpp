@@ -40,7 +40,7 @@ void SwitchCaseFullExpr::exitAndBranch(SILLocation loc,
     return;
   }
 
-  SGF.Cleanups.emitBranchAndCleanups(branchDest.getJumpDest(), loc, branchArgs);
+  SGF.Cleanups.emitCleanupsAndBranch(branchDest.getJumpDest(), loc, branchArgs);
 }
 
 void SwitchCaseFullExpr::exit() {
@@ -120,7 +120,7 @@ void SwitchEnumBuilder::emit() && {
     // Don't allow cleanups to escape the conditional block.
     SwitchCaseFullExpr presentScope(builder.getSILGenFunction(),
                                     CleanupLocation::get(loc), branchDest);
-    builder.emitBlock(defaultBlock);
+    builder.emitBlockBegin(defaultBlock);
     ManagedValue input = optional;
     if (!isAddressOnly) {
       input = builder.createOwnedPHIArgument(optional.getType());
@@ -139,7 +139,7 @@ void SwitchEnumBuilder::emit() && {
     SwitchCaseFullExpr presentScope(builder.getSILGenFunction(),
                                     CleanupLocation::get(loc), branchDest);
 
-    builder.emitBlock(caseBlock);
+    builder.emitBlockBegin(caseBlock);
 
     ManagedValue input;
     if (decl->hasAssociatedValues()) {
@@ -166,7 +166,7 @@ void SwitchEnumBuilder::emit() && {
     // Don't allow cleanups to escape the conditional block.
     SwitchCaseFullExpr presentScope(builder.getSILGenFunction(),
                                     CleanupLocation::get(loc), branchDest);
-    builder.emitBlock(defaultBlock);
+    builder.emitBlockBegin(defaultBlock);
     ManagedValue input = optional;
     if (!isAddressOnly) {
       input = builder.createOwnedPHIArgument(optional.getType());

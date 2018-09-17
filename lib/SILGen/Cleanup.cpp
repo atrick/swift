@@ -136,10 +136,9 @@ bool CleanupManager::hasAnyActiveCleanups(CleanupsDepth from) {
   return ::hasAnyActiveCleanups(stack.begin(), stack.find(from));
 }
 
-/// emitBranchAndCleanups - Emit a branch to the given jump destination,
-/// threading out through any cleanups we might need to run.  This does not
-/// pop the cleanup stack.
-void CleanupManager::emitBranchAndCleanups(JumpDest dest, SILLocation branchLoc,
+/// Emit a branch to the given jump destination, threading out through any
+/// cleanups we might need to run.  This does not pop the cleanup stack.
+void CleanupManager::emitCleanupsAndBranch(JumpDest dest, SILLocation branchLoc,
                                            ArrayRef<SILValue> args,
                                            ForUnwind_t forUnwind) {
   SILGenBuilder &builder = SGF.getBuilder();
@@ -147,6 +146,20 @@ void CleanupManager::emitBranchAndCleanups(JumpDest dest, SILLocation branchLoc,
   emitCleanups(dest.getDepth(), dest.getCleanupLocation(),
                forUnwind, /*popCleanups=*/false);
   builder.createBranch(branchLoc, dest.getBlock(), args);
+}
+
+/// Emit a branch to the given jump destination, emitting any cleanups that need
+/// to run in `dest`.  This does not pop the cleanup stack.
+void CleanupManager::emitBranchToCleanups(JumpDest dest, SILLocation branchLoc,
+                                          ForUnwind_t forUnwind) {
+  assert(!dest.getChainDepth().isValid()
+         && "Chained cleanups should be emitted in their own block.");
+  SILGenBuilder &builder = SGF.getBuilder();
+  assert(builder.hasValidInsertionPoint() && "Emitting branch in invalid spot");
+  builder.createBranch(branchLoc, dest.getBlock());
+  builder.setInsertionPoint(dest.getBlock(), dest.getBlock()->begin());
+  emitCleanups(dest.getDepth(), dest.getCleanupLocation(), forUnwind,
+               /*popCleanups=*/false);
 }
 
 void CleanupManager::emitCleanupsForReturn(CleanupLocation loc,
@@ -174,16 +187,15 @@ SILBasicBlock *CleanupManager::emitBlockForCleanups(JumpDest dest,
   // Otherwise, create and emit a new block.
   auto *newBlock = SGF.createBasicBlock();
   SILGenSavedInsertionPoint IPRAII(SGF, newBlock);
-  emitBranchAndCleanups(dest, branchLoc, args, forUnwind);
+  emitCleanupsAndBranch(dest, branchLoc, args, forUnwind);
   return newBlock;
 }
 
 void CleanupManager::emitCleanupsInDest(JumpDest dest) {
-  SILGenSavedInsertionPoint IP(SGF, dest.getBlock());
+  SILGenSavedInsertionPoint IPRAII(SGF, dest.getBlock());
   SGF.B.setInsertionPoint(dest.getBlock(), dest.getBlock()->begin());
-  assert(SGF.B.hasValidInsertionPoint() && "Cleanup in invalid spot");
-  emitCleanups(dest.getDepth(), dest.getCleanupLocation(),
-               NotForUnwind, /*popCleanups=*/false);
+  emitCleanups(dest.getDepth(), dest.getCleanupLocation(), NotForUnwind,
+               /*popCleanups=*/false, dest.getChainDepth());
 }
 
 Cleanup &CleanupManager::initCleanup(Cleanup &cleanup,

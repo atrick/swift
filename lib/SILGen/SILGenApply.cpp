@@ -4769,7 +4769,7 @@ void SILGenFunction::emitRawYield(SILLocation loc,
   if (requiresSeparateUnwindBB) {
     SILGenSavedInsertionPoint savedIP(*this, unwindBB,
                                       FunctionSection::Postmatter);
-    Cleanups.emitBranchAndCleanups(unwindDest, loc);
+    Cleanups.emitCleanupsAndBranch(unwindDest, loc);
   }
 
   // Emit the resumption path.

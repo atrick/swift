@@ -1004,7 +1004,7 @@ void PatternMatchEmission::emitDispatch(ClauseMatrix &clauses, ArgArray args,
     ExitableFullExpr scope(SGF, CleanupLocation(PatternMatchStmt));
     auto innerFailure = [&](SILLocation loc) {
       if (firstRow == clauses.rows()) return outerFailure(loc);
-      SGF.Cleanups.emitBranchAndCleanups(scope.getExitDest(), loc);
+      SGF.Cleanups.emitCleanupsAndBranch(scope.getExitDest(), loc);
     };
 
     // If there is no necessary column, just emit the first row.
@@ -1246,7 +1246,7 @@ void PatternMatchEmission::emitSpecializedDispatch(ClauseMatrix &clauses,
   //       /* DON'T DO THIS */
   //       ExitableFullExpr scope;
   //       FailureHandler innerFailure = [&](SILLocation loc) {
-  //         emitBranchAndCleanups(scope, loc);
+  //         emitCleanupsAndBranch(scope, loc);
   //       };
   //       ...
   //       /* DON'T DO THIS */
@@ -2537,7 +2537,7 @@ void SILGenFunction::emitSwitchStmt(SwitchStmt *S) {
       // Don't emit anything yet, we emit it at the cleanup level of the switch
       // statement.
       JumpDest sharedDest = emission.getSharedCaseBlockDest(caseBlock);
-      Cleanups.emitBranchAndCleanups(sharedDest, caseBlock);
+      Cleanups.emitCleanupsAndBranch(sharedDest, caseBlock);
     } else if (row.hasFallthroughTo() || caseBlock->getCaseLabelItems().size() > 1) {
       JumpDest sharedDest =
           emission.getSharedCaseBlockDest(caseBlock);
@@ -2587,7 +2587,7 @@ void SILGenFunction::emitSwitchStmt(SwitchStmt *S) {
         }
       }
 
-      Cleanups.emitBranchAndCleanups(sharedDest, caseBlock, args);
+      Cleanups.emitCleanupsAndBranch(sharedDest, caseBlock, args);
     } else {
       // However, if we don't have a fallthrough or a multi-pattern 'case', we
       // can just emit the body inline and save some dead blocks.
@@ -2696,7 +2696,7 @@ void SILGenFunction::emitSwitchFallthrough(FallthroughStmt *S) {
   context->Emission.getSharedCaseBlockDest(caseStmt);
 
   if (!caseStmt->hasBoundDecls()) {
-    Cleanups.emitBranchAndCleanups(sharedDest, S);
+    Cleanups.emitCleanupsAndBranch(sharedDest, S);
   } else {
     // Generate branch args to pass along current vars to fallthrough case.
     SILModule &M = F.getModule();
@@ -2727,7 +2727,7 @@ void SILGenFunction::emitSwitchFallthrough(FallthroughStmt *S) {
         }
       }
     }
-    Cleanups.emitBranchAndCleanups(sharedDest, S, args);
+    Cleanups.emitCleanupsAndBranch(sharedDest, S, args);
   }
 }
 
@@ -2745,7 +2745,7 @@ void SILGenFunction::emitCatchDispatch(DoCatchStmt *S, ManagedValue exn,
 
     // If we fell out of the catch clause, branch to the fallthrough dest.
     if (B.hasValidInsertionPoint()) {
-      Cleanups.emitBranchAndCleanups(catchFallthroughDest, clause->getBody());
+      Cleanups.emitCleanupsAndBranch(catchFallthroughDest, clause->getBody());
     }
   };
 

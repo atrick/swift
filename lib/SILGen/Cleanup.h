@@ -171,9 +171,14 @@ public:
   /// \param dest       The destination scope and block.
   /// \param branchLoc  The location of the branch instruction.
   /// \param args       Arguments to pass to the destination block.
-  void emitBranchAndCleanups(JumpDest dest, SILLocation branchLoc,
+  void emitCleanupsAndBranch(JumpDest dest, SILLocation branchLoc,
                              ArrayRef<SILValue> args = {},
                              ForUnwind_t forUnwind = NotForUnwind);
+
+  /// Emit a branch to the given jump destination, emitting any cleanups that
+  /// need to run in `dest`.  This does not pop the cleanup stack.
+  void emitBranchToCleanups(JumpDest dest, SILLocation branchLoc,
+                            ForUnwind_t forUnwind = NotForUnwind);
 
   /// emitCleanupsForReturn - Emit the top-level cleanups needed prior to a
   /// return from the function.

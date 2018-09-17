@@ -721,6 +721,10 @@ public:
   /// section.
   SILBasicBlock *createBasicBlock(FunctionSection section);
 
+  /// Create a new basic block that falls through to `destBB`.
+  SILBasicBlock *createBasicBlockAndBranch(SILLocation loc,
+                                           SILBasicBlock *destBB);
+
   /// Erase a basic block that was speculatively created and turned
   /// out to be unneeded.
   ///

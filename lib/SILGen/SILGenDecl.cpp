@@ -813,7 +813,7 @@ void EnumElementPatternInitialization::emitEnumMatch(
   // *NOTE* This needs to be in reverse order to preserve the textual SIL.
   auto *contBlock = SGF.createBasicBlock();
   auto *someBlock = SGF.createBasicBlock();
-  auto *defaultBlock = failureDest.getBlock(); //!!!
+  auto *defaultBlock = SGF.createBasicBlock();
   auto *originalBlock = SGF.B.getInsertionBB();
 
   SwitchEnumBuilder switchBuilder(SGF.B, loc, value);
@@ -828,12 +828,13 @@ void EnumElementPatternInitialization::emitEnumMatch(
   // the positive case, a cleanup will be emitted for the initialization on the
   // negative path... but the actual initialization happened on the positive
   // path, causing a use (the destroy on the negative path) to be created that
-  // does not dominate its definition (in the positive path).
-  //!!!auto handler = [&SGF, &loc, &failureDest](ManagedValue mv,
-  auto handler = [&SGF, &failureDest](ManagedValue mv,
-                                      SwitchCaseFullExpr &&expr) {
+  // is not dominated by its definition (in the positive path).
+  auto handler = [&SGF, &loc, &failureDest](ManagedValue mv,
+                                            SwitchCaseFullExpr &&expr) {
     expr.exit();
-    SGF.Cleanups.emitCleanupsInDest(failureDest);
+    SGF.Cleanups.emitCleanupsAndBranch(failureDest, loc);
+    //!!!
+    llvm::dbgs() << "### Enum .none cleanup:\n" << *failureDest.getBlock();
   };
 
   // If we have a binary enum, do not emit a true default case. This ensures
@@ -1269,10 +1270,11 @@ void SILGenFunction::emitStmtCondition(ArrayRef<StmtConditionElement> Conds,
             1)
         && "Sema forces conditions to have Builtin.i1 type");
 
+    Cleanups.emitCleanupsInDest(FalseDest);
+
     // Just branch on the condition.  On failure, we unwind any active
     // cleanups, on success we fall through to a new block.
     SILBasicBlock *ContBB = createBasicBlock();
-    Cleanups.emitCleanupsInDest(FalseDest);
     B.createCondBranch(booleanTestLoc, booleanTestValue, ContBB,
                        FalseDest.getBlock(), NumTrueTaken, NumFalseTaken);
 
@@ -1324,15 +1326,14 @@ void SILGenFunction::emitStmtCondition(ArrayRef<StmtConditionElement> Conds,
     return;
 
   // Split the CFG edge from the current failure condition to FalseDest.
-  auto *newFalseBB = createBasicBlock();
-  FalseDest.getBlock()->replaceAllBranchUsesWith(newFalseBB);
-  SILGenBuilder(B, newFalseBB).createBranch(loc, FalseDest.getBlock());
+  auto *falseBranchBB = createBasicBlock();
+  FalseDest.getBlock()->replaceAllBranchUsesWith(falseBranchBB);
+  SILGenBuilder(B, falseBranchBB).createBranch(loc, FalseDest.getBlock());
 
   // Chain cleanup blocks to avoid emitting redundant cleanup code.
-  auto *cleanupBB = createBasicBlock();
-  SILGenBuilder(B, cleanupBB).createBranch(loc, FalseDest.getBlock());
+  auto *chainedCleanupBB = createBasicBlockAndBranch(loc, FalseDest.getBlock());
   auto cleanupLoc = CleanupLocation::get(loc);
-  JumpDest cleanupDest(cleanupBB, getCleanupsDepth(), cleanupLoc);
+  JumpDest cleanupDest(chainedCleanupBB, getCleanupsDepth(), cleanupLoc);
 
   // Recursively emit the remaining conditions.
   emitStmtCondition(Conds.drop_front(), cleanupDest, cleanupLoc, NumTrueTaken,

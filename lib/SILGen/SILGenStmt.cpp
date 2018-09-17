@@ -89,6 +89,14 @@ void SILGenFunction::eraseBasicBlock(SILBasicBlock *block) {
   block->eraseFromParent();
 }
 
+SILBasicBlock *
+SILGenFunction::createBasicBlockAndBranch(SILLocation loc,
+                                          SILBasicBlock *destBB) {
+  auto *newBB = createBasicBlock();
+  SILGenBuilder(B, newBB).createBranch(loc, destBB);
+  return newBB;
+}
+
 //===----------------------------------------------------------------------===//
 // SILGenFunction emitStmt implementation
 //===----------------------------------------------------------------------===//
@@ -398,7 +406,7 @@ void SILGenFunction::emitReturnExpr(SILLocation branchLoc,
     RValue RV = emitRValue(ret).ensurePlusOne(*this, CleanupLocation(ret));
     std::move(RV).forwardAll(*this, directResults);
   }
-  Cleanups.emitBranchAndCleanups(ReturnDest, branchLoc, directResults);
+  Cleanups.emitCleanupsAndBranch(ReturnDest, branchLoc, directResults);
 }
 
 void StmtEmitter::visitReturnStmt(ReturnStmt *S) {
@@ -410,7 +418,7 @@ void StmtEmitter::visitReturnStmt(ReturnStmt *S) {
   SILValue ArgV;
   if (!S->hasResult())
     // Void return.
-    SGF.Cleanups.emitBranchAndCleanups(SGF.ReturnDest, Loc);
+    SGF.Cleanups.emitCleanupsAndBranch(SGF.ReturnDest, Loc);
   else if (S->getResult()->getType()->isUninhabited())
     // Never return.
     SGF.emitIgnoredExpr(S->getResult());
@@ -541,7 +549,7 @@ void StmtEmitter::visitIfStmt(IfStmt *S) {
     if (SGF.B.hasValidInsertionPoint()) {
       RegularLocation L(S->getThenStmt());
       L.pointToEnd();
-      SGF.Cleanups.emitBranchAndCleanups(contDest, L);
+      SGF.Cleanups.emitCleanupsAndBranch(contDest, L);
     }
   }
   
@@ -625,7 +633,8 @@ void StmtEmitter::visitWhileStmt(WhileStmt *S) {
     auto NumFalseTaken = SGF.loadProfilerCount(S);
     SGF.emitStmtCondition(S->getCond(), exitDest, S, NumTrueTaken, NumFalseTaken);
     // ExitDest now has all its cleanup. Link it to breakBB.
-    SILBuilder(exitDest.getBlock(), SGF.B.getBuilderContext())
+    SILBuilder(exitDest.getBlock(), SGF.B.getCurrentDebugScope(),
+               SGF.B.getBuilderContext())
         .createBranch(S, breakDest.getBlock());
 
     // In the success path, emit the body of the while.
@@ -637,7 +646,7 @@ void StmtEmitter::visitWhileStmt(WhileStmt *S) {
     if (SGF.B.hasValidInsertionPoint()) {
       RegularLocation L(S->getBody());
       L.pointToEnd();
-      SGF.Cleanups.emitBranchAndCleanups(loopDest, L);
+      SGF.Cleanups.emitCleanupsAndBranch(loopDest, L);
     }
   }
 
@@ -858,10 +867,8 @@ void StmtEmitter::visitForEachStmt(ForEachStmt *S) {
         {
           Scope innerForScope(SGF.Cleanups, CleanupLocation(S->getBody()));
           // Emit the initialization for the pattern.  If any of the bound
-          // patterns
-          // fail (because this is a 'for case' pattern with a refutable
-          // pattern,
-          // the code should jump to the continue block.
+          // patterns fail (because this is a 'for case' pattern with a
+          // refutable pattern, the code should jump to the continue block.
           InitializationPtr initLoopVars =
               SGF.emitPatternBindingInitialization(S->getPattern(), loopDest);
 
@@ -888,7 +895,7 @@ void StmtEmitter::visitForEachStmt(ForEachStmt *S) {
                 SGF.emitCondition(Where, /*hasFalse*/ false, /*invert*/ true);
             // If self is null, branch to the epilog.
             cond.enterTrue(SGF);
-            SGF.Cleanups.emitBranchAndCleanups(loopDest, Where, {});
+            SGF.Cleanups.emitCleanupsAndBranch(loopDest, Where, {});
             cond.exitTrue(SGF);
             cond.complete(SGF);
           }
@@ -940,7 +947,7 @@ void SILGenFunction::emitBreakOutOf(SILLocation loc, Stmt *target) {
   // stmt.
   for (auto &elt : BreakContinueDestStack) {
     if (target == elt.Target) {
-      Cleanups.emitBranchAndCleanups(elt.BreakDest, loc);
+      Cleanups.emitCleanupsAndBranch(elt.BreakDest, loc);
       return;
     }
   }
@@ -956,7 +963,7 @@ void StmtEmitter::visitContinueStmt(ContinueStmt *S) {
   // stmt.
   for (auto &elt : SGF.BreakContinueDestStack) {
     if (S->getTarget() == elt.Target) {
-      SGF.Cleanups.emitBranchAndCleanups(elt.ContinueDest, S);
+      SGF.Cleanups.emitCleanupsAndBranch(elt.ContinueDest, S);
       return;
     }
   }
@@ -980,7 +987,7 @@ void StmtEmitter::visitFallthroughStmt(FallthroughStmt *S) {
 void StmtEmitter::visitFailStmt(FailStmt *S) {
   // Jump to the failure block.
   assert(SGF.FailDest.isValid() && "too big to fail");
-  SGF.Cleanups.emitBranchAndCleanups(SGF.FailDest, S);
+  SGF.Cleanups.emitCleanupsAndBranch(SGF.FailDest, S);
 }
 
 /// Return a basic block suitable to be the destination block of a
@@ -1034,5 +1041,5 @@ void SILGenFunction::emitThrow(SILLocation loc, ManagedValue exnMV,
   }
 
   // Branch to the cleanup destination.
-  Cleanups.emitBranchAndCleanups(ThrowDest, loc, exn, IsForUnwind);
+  Cleanups.emitCleanupsAndBranch(ThrowDest, loc, exn, IsForUnwind);
 }
