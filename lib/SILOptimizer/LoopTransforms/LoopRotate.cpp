@@ -386,10 +386,13 @@ bool swift::rotateLoop(SILLoop *L, DominanceInfo *DT, SILLoopInfo *LI,
   Header->moveAfter(Latch);
 
   // Merge the old latch with the old header if possible.
-  mergeBasicBlockWithSuccessor(Latch, DT, LI);
+  if (mergeBasicBlockWithSuccessor(Latch, DT, LI))
+    Header = Latch;
 
-  // Create a new preheader.
-  splitIfCriticalEdge(Preheader, NewHeader, DT, LI);
+  // Cloning the header into the preheader created critical edges from the
+  // preheader and original header to both the new header and loop exit.
+  splitCriticalEdgesFrom(Preheader, DT, LI);
+  splitCriticalEdgesFrom(Header, DT, LI);
 
   if (ShouldVerify) {
     DT->verify();
@@ -399,6 +402,8 @@ bool swift::rotateLoop(SILLoop *L, DominanceInfo *DT, SILLoopInfo *LI,
 
   LLVM_DEBUG(llvm::dbgs() << "  to " << *L);
   LLVM_DEBUG(L->getHeader()->getParent()->dump());
+
+  L->getHeader()->getParent()->verifyCriticalEdges();
   return true;
 }
 
