@@ -413,6 +413,12 @@ bool swift::isCriticalEdge(TermInst *T, unsigned EdgeIdx) {
   if (DestBB->getSinglePredecessorBlock())
     return false;
 
+  //!!!
+  //llvm::dbgs() << "Critical edge from\n";
+  //T->getParent()->dump();
+  //llvm::dbgs() << "Critical edge to\n";
+  //DestBB->dump();
+
   return true;
 }
 
@@ -587,6 +593,10 @@ SILBasicBlock *swift::splitEdge(TermInst *T, unsigned EdgeIdx,
   // Strip the arguments and rewire the branch in the source block.
   changeBranchTarget(T, EdgeIdx, EdgeBB, /*PreserveArgs=*/false);
 
+  //!!!
+  //llvm::dbgs() << "Split Edge\n";
+  //EdgeBB->dump();
+
   if (!DT && !LI)
     return EdgeBB;
 
@@ -685,6 +695,16 @@ SILBasicBlock *swift::splitCriticalEdge(TermInst *T, unsigned EdgeIdx,
   return splitEdge(T, EdgeIdx, DT, LI);
 }
 
+bool swift::splitCriticalEdgesFrom(SILBasicBlock *fromBB, DominanceInfo *DT,
+                                   SILLoopInfo *LI) {
+  bool Changed = false;
+  for (unsigned idx = 0, e = fromBB->getSuccessors().size(); idx != e; ++idx) {
+    auto *NewBB = splitCriticalEdge(fromBB->getTerminator(), idx, DT, LI);
+    Changed |= (NewBB != nullptr);
+  }
+  return Changed;
+}
+
 bool swift::hasCriticalEdges(SILFunction &F, bool OnlyNonCondBr) {
   for (SILBasicBlock &BB : F) {
     // Only consider critical edges for terminators that don't support block
@@ -704,23 +724,12 @@ bool swift::hasCriticalEdges(SILFunction &F, bool OnlyNonCondBr) {
 
 /// Split all critical edges in the function updating the dominator tree and
 /// loop information (if they are not set to null).
-bool swift::splitAllCriticalEdges(SILFunction &F, DominanceInfo *DT,
-                                  SILLoopInfo *LI) {
-  bool Changed = false;
-
-  for (SILBasicBlock &BB : F) {
-    if (isa<BranchInst>(BB.getTerminator()))
-      continue;
-
-    for (unsigned Idx = 0, e = BB.getSuccessors().size(); Idx != e; ++Idx) {
-      auto *NewBB = splitCriticalEdge(BB.getTerminator(), Idx, DT, LI);
-      assert(!NewBB
-             || isa<CondBranchInst>(BB.getTerminator())
-                    && "Only cond_br may have a critical edge.");
-      Changed |= (NewBB != nullptr);
-    }
-  }
-  return Changed;
+///
+/// FIXME: remove this. It's asserting condition is covered by the SILVerifier.
+bool swift::splitAllCriticalEdges(SILFunction &F, DominanceInfo *,
+                                  SILLoopInfo *) {
+  assert(!hasCriticalEdges(F, false) && "No critical edges allowed");
+  return false;
 }
 
 /// Merge the basic block with its successor if possible. If dominance
@@ -937,7 +946,7 @@ bool RemoveUnreachable::run() {
       Changed = true;
     }
   }
-
+  Fn.verifyCriticalEdges();
   return Changed;
 }
 

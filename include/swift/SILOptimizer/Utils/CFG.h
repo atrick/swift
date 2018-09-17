@@ -115,7 +115,12 @@ SILBasicBlock *splitBasicBlockAndBranch(SILBuilder &B,
                                         SILInstruction *SplitBeforeInst,
                                         DominanceInfo *DT, SILLoopInfo *LI);
 
-/// \brief Return true if the function has a critical edge, false otherwise.
+/// Create a new basic block for each of `fromBB`'s critical successor edges.
+/// Returns true if anything changed.
+bool splitCriticalEdgesFrom(SILBasicBlock *fromBB, DominanceInfo *DT,
+                            SILLoopInfo *LI);
+
+  /// \brief Return true if the function has a critical edge, false otherwise.
 bool hasCriticalEdges(SILFunction &F, bool OnlyNonCondBr);
 
 /// \brief Split all critical edges in the given function, updating the
