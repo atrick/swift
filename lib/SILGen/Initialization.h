@@ -18,6 +18,7 @@
 #ifndef SWIFT_LOWERING_INITIALIZATION_H
 #define SWIFT_LOWERING_INITIALIZATION_H
 
+#include "JumpDest.h"
 #include "ManagedValue.h"
 #include "swift/SIL/AbstractionPattern.h"
 #include "llvm/ADT/TinyPtrVector.h"
@@ -110,6 +111,20 @@ public:
   virtual bool canSplitIntoTupleElements() const {
     return false;
   }
+
+  /// Each sub-Initialization is paired with a chained failure destination (in
+  /// addition to the sub-Initialization's own failure destination). The first
+  /// subinitialization jumps to the most common cleanup. The last
+  /// subinitialization jumps to the least common cleanup.
+  struct ChainedSubInit {
+    InitializationPtr subInit;
+    JumpDest chainedDest;
+
+    ChainedSubInit() : subInit(), chainedDest() {}
+
+    ChainedSubInit(InitializationPtr &&subInit, JumpDest chainedDest)
+        : subInit(std::move(subInit)), chainedDest(chainedDest) {}
+  };
 
   /// Break this initialization (which expects a value of tuple type)
   /// into component sub-initializations for the elements.  This

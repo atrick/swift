@@ -33,8 +33,12 @@ namespace Lowering {
 class LLVM_LIBRARY_VISIBILITY JumpDest {
   SILBasicBlock *Block = nullptr;
   CleanupsDepth Depth = CleanupsDepth::invalid();
+  CleanupsDepth ChainDepth = CleanupsDepth::invalid();
   CleanupLocation CleanupLoc;
 public:
+  JumpDest()
+      : CleanupLoc(CleanupLocation::get(ArtificialUnreachableLocation())) {}
+
   JumpDest(CleanupLocation L) : CleanupLoc(L) {}
   
   JumpDest(SILBasicBlock *block, CleanupsDepth depth, CleanupLocation l)
@@ -48,6 +52,12 @@ public:
   }
   CleanupsDepth getDepth() const { return Depth; }
   CleanupLocation getCleanupLocation() const { return CleanupLoc; }
+
+  /// Get the minimum depth for cleanup in this jump target. All cleanups above
+  /// this in the stack will be handled by a CFG predecessor on the failure
+  /// path.
+  CleanupsDepth getChainDepth() const { return ChainDepth; }
+  void setChainDepth(CleanupsDepth chainDepth) { ChainDepth = chainDepth; }
 
   JumpDest translate(CleanupsDepth NewDepth) && {
     JumpDest NewValue(Block, NewDepth, CleanupLoc);

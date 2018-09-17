@@ -74,8 +74,12 @@ void CleanupManager::popAndEmitCleanup(CleanupHandle handle,
 }
 
 void CleanupManager::emitCleanups(CleanupsDepth depth, CleanupLocation loc,
-                                  ForUnwind_t forUnwind, bool popCleanups) {
-  auto cur = stack.stable_begin();
+                                  ForUnwind_t forUnwind, bool popCleanups,
+                                  CleanupsDepth chainDepth) {
+  assert(!chainDepth.isValid()
+         || !popCleanups && "cannot pop chained cleanups");
+
+  auto cur = chainDepth.isValid() ? chainDepth : stack.stable_begin();
 #ifndef NDEBUG
   auto topOfStack = cur;
 #endif
@@ -160,6 +164,9 @@ SILBasicBlock *CleanupManager::emitBlockForCleanups(JumpDest dest,
                                                     SILLocation branchLoc,
                                                     ArrayRef<SILValue> args,
                                                     ForUnwind_t forUnwind) {
+  assert(!dest.getChainDepth().isValid()
+         && "Chained cleanups should be emitted in an existing block.");
+
   // If there are no cleanups to run, just return the Dest block directly.
   if (!hasAnyActiveCleanups(dest.getDepth()))
     return dest.getBlock();
