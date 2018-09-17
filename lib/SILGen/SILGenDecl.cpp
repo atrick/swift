@@ -832,7 +832,8 @@ void EnumElementPatternInitialization::emitEnumMatch(
   auto handler = [&SGF, &loc, &failureDest](ManagedValue mv,
                                             SwitchCaseFullExpr &&expr) {
     expr.exit();
-    SGF.Cleanups.emitCleanupsAndBranch(failureDest, loc);
+    // !!! The expression scope is not shared but the cleanup might be.
+    SGF.Cleanups.emitCleanupsInDest(failureDest, loc);
     //!!!
     llvm::dbgs() << "### Enum .none cleanup:\n" << *failureDest.getBlock();
   };
@@ -1053,6 +1054,13 @@ struct InitializationForPattern
   InitializationForPattern(SILGenFunction &SGF, JumpDest patternFailDest)
     : SGF(SGF), patternFailDest(patternFailDest) {}
 
+  JumpDest createChainedFailDest() {
+    return JumpDest(
+        SGF.createBasicBlockAndBranch(getFailDest().getCleanupLocation(),
+                                      getFailDest().getBlock()),
+        SGF.getCleanupsDepth(), getFailDest().getCleanupLocation());
+  }
+
   // Paren, Typed, and Var patterns are noops, just look through them.
   InitializationPtr visitParenPattern(ParenPattern *P) {
     return visit(P->getSubPattern());
@@ -1085,9 +1093,12 @@ struct InitializationForPattern
   // Bind a tuple pattern by aggregating the component variables into a
   // TupleInitialization.
   InitializationPtr visitTuplePattern(TuplePattern *P) {
+    JumpDest tupleFailDest = patternFailDest;
     TupleInitialization *init = new TupleInitialization();
-    for (auto &elt : P->getElements())
-      init->SubInitializations.push_back(visit(elt.getPattern()));
+    for (unsigned i = 0, e = P->getNumElements(); i < e; ++i) {
+      
+      init->SubInitializations.push_back(visit(P->getElement(i).getPattern()));
+    }
     return InitializationPtr(init);
   }
 
@@ -1250,68 +1261,34 @@ SILValue SILGenFunction::emitOSVersionRangeCheck(SILLocation loc,
   return B.createApply(loc, availabilityGTEFn, args, false);
 }
 
-
 /// Emit the boolean test and/or pattern bindings indicated by the specified
 /// stmt condition.  If the condition fails, control flow is transferred to the
-/// specified JumpDest.  The insertion point is left in the block where the
-/// condition has matched and any bound variables are in scope.
+/// specified JumpDest.  The insertion point is left in the block
+/// where the condition has matched and any bound variables are in scope.
 ///
-void SILGenFunction::emitStmtCondition(StmtCondition Cond, JumpDest FalseDest,
-                                       SILLocation loc,
+/// !!! TODO: For this to work, all expression evaluation needs to emit its
+/// !!! cleanups inside FailDest. The exit from the FullExprScope should be
+/// !!! specific to the expression, but the other cleanups can be shared.
+/// !!! For Tuple patterns, the last tuple element can generate shared cleanups,
+/// !!! but all the rest need to jump to a cleanup block *after* the shared
+/// !!! cleanups. This is so weird that I finally gave up on it.
+void SILGenFunction::emitStmtCondition(ArrayRef<StmtConditionElement> Conds,
+                                       JumpDest FalseDest, SILLocation loc,
                                        ProfileCounter NumTrueTaken,
                                        ProfileCounter NumFalseTaken) {
-
   assert(B.hasValidInsertionPoint() &&
          "emitting condition at unreachable point");
-  
-  for (const auto &elt : Cond) {
-    SILLocation booleanTestLoc = loc;
-    SILValue booleanTestValue;
 
-    switch (elt.getKind()) {
-    case StmtConditionElement::CK_PatternBinding: {
-      InitializationPtr initialization =
-      InitializationForPattern(*this, FalseDest).visit(elt.getPattern());
-
-      // Emit the initial value into the initialization.
-      FullExpr Scope(Cleanups, CleanupLocation(elt.getInitializer()));
-      emitExprInto(elt.getInitializer(), initialization.get());
-      // Pattern bindings handle their own tests, we don't need a boolean test.
-      continue;
-    }
-
-    case StmtConditionElement::CK_Boolean: { // Handle boolean conditions.
-      auto *expr = elt.getBoolean();
-      // Evaluate the condition as an i1 value (guaranteed by Sema).
-      FullExpr Scope(Cleanups, CleanupLocation(expr));
-      booleanTestValue = emitRValue(expr).forwardAsSingleValue(*this, expr);
-      booleanTestLoc = expr;
-      break;
-    }
-    case StmtConditionElement::CK_Availability:
-      // Check the running OS version to determine whether it is in the range
-      // specified by elt.
-      VersionRange OSVersion = elt.getAvailability()->getAvailableRange();
-      assert(!OSVersion.isEmpty());
-
-      if (OSVersion.isAll()) {
-        // If there's no check for the current platform, this condition is
-        // trivially true.
-        SILType i1 = SILType::getBuiltinIntegerType(1, getASTContext());
-        booleanTestValue = B.createIntegerLiteral(loc, i1, true);
-      } else {
-        booleanTestValue = emitOSVersionRangeCheck(loc, OSVersion);
-      }
-      break;
-    }
-
+  auto emitCondBranch = [&](SILLocation booleanTestLoc,
+                            SILValue booleanTestValue) {
     // Now that we have a boolean test as a Builtin.i1, emit the branch.
-    assert(booleanTestValue->getType().
-           castTo<BuiltinIntegerType>()->isFixedWidth(1) &&
-           "Sema forces conditions to have Builtin.i1 type");
-    
-    // Just branch on the condition.  On failure, we unwind any active cleanups,
-    // on success we fall through to a new block.
+    assert(
+        booleanTestValue->getType().castTo<BuiltinIntegerType>()->isFixedWidth(
+            1)
+        && "Sema forces conditions to have Builtin.i1 type");
+
+    // Just branch on the condition.  On failure, we unwind any active
+    // cleanups, on success we fall through to a new block.
     SILBasicBlock *ContBB = createBasicBlock();
     auto FailBB = Cleanups.emitBlockForCleanups(FailDest, loc);
     B.createCondBranch(booleanTestLoc, booleanTestValue, ContBB, FailBB,
@@ -1320,7 +1297,63 @@ void SILGenFunction::emitStmtCondition(StmtCondition Cond, JumpDest FalseDest,
     // Finally, emit the continue block and keep emitting the rest of the
     // condition.
     B.emitBlock(ContBB);
+  };
+
+  auto elt = Conds.front();
+  switch (elt.getKind()) {
+  case StmtConditionElement::CK_PatternBinding: {
+    {
+      InitializationPtr initialization =
+          InitializationForPattern(*this, FalseDest).visit(elt.getPattern());
+
+      // Emit the initial value into the initialization.
+      FullExpr Scope(Cleanups, CleanupLocation(elt.getInitializer()));
+      emitExprInto(elt.getInitializer(), initialization.get());
+    }
+    // Pattern bindings handle their own tests, we don't need a boolean test.
+    break;
   }
+  case StmtConditionElement::CK_Boolean: { // Handle boolean conditions.
+    auto *expr = elt.getBoolean();
+    // Evaluate the condition as an i1 value (guaranteed by Sema).
+    FullExpr Scope(Cleanups, CleanupLocation(expr));
+    emitCondBranch(expr, emitRValue(expr).forwardAsSingleValue(*this, expr));
+    break;
+  }
+  case StmtConditionElement::CK_Availability:
+    // Check the running OS version to determine whether it is in the range
+    // specified by elt.
+    VersionRange OSVersion = elt.getAvailability()->getAvailableRange();
+    assert(!OSVersion.isEmpty());
+
+    SILValue booleanTestValue;
+    if (OSVersion.isAll()) {
+      // If there's no check for the current platform, this condition is
+      // trivially true.
+      SILType i1 = SILType::getBuiltinIntegerType(1, getASTContext());
+      booleanTestValue = B.createIntegerLiteral(loc, i1, true);
+    } else {
+      booleanTestValue = emitOSVersionRangeCheck(loc, OSVersion);
+    }
+    emitCondBranch(loc, booleanTestValue);
+    break;
+  }
+  if (Conds.size() == 1)
+    return;
+
+  // Split the CFG edge from the current failure condition to FalseDest.
+  auto *falseBranchBB = createBasicBlock();
+  FalseDest.getBlock()->replaceAllBranchUsesWith(falseBranchBB);
+  SILGenBuilder(B, falseBranchBB).createBranch(loc, FalseDest.getBlock());
+
+  // Chain cleanup blocks to avoid emitting redundant cleanup code.
+  auto *chainedCleanupBB = createBasicBlockAndBranch(loc, FalseDest.getBlock());
+  auto cleanupLoc = CleanupLocation::get(loc);
+  JumpDest cleanupDest(chainedCleanupBB, getCleanupsDepth(), cleanupLoc);
+
+  // Recursively emit the remaining conditions.
+  emitStmtCondition(Conds.drop_front(), cleanupDest, cleanupLoc, NumTrueTaken,
+                    NumFalseTaken);
 }
 
 InitializationPtr
