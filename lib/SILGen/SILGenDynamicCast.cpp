@@ -688,7 +688,7 @@ RValue Lowering::emitConditionalCheckedCast(
         if (!resultObjectTemp) {
           auto some = SGF.B.createEnum(loc, objectValue.forward(SGF), someDecl,
                                        resultTL.getLoweredType());
-          SGF.Cleanups.emitBranchAndCleanups(scope.getExitDest(), loc, {some});
+          SGF.Cleanups.emitCleanupsAndBranch(scope.getExitDest(), loc, {some});
           return;
         }
 
@@ -697,7 +697,7 @@ RValue Lowering::emitConditionalCheckedCast(
           objectValue.forwardInto(SGF, loc, resultObjectBuffer);
         }
         SGF.B.createInjectEnumAddr(loc, resultBuffer, someDecl);
-        SGF.Cleanups.emitBranchAndCleanups(scope.getExitDest(), loc);
+        SGF.Cleanups.emitCleanupsAndBranch(scope.getExitDest(), loc);
       },
       // The failure path.
       [&](Optional<ManagedValue> Value) {
@@ -712,12 +712,12 @@ RValue Lowering::emitConditionalCheckedCast(
         if (!resultObjectTemp) {
           auto none = SGF.B.createEnum(loc, nullptr, noneDecl,
                                        resultTL.getLoweredType());
-          SGF.Cleanups.emitBranchAndCleanups(scope.getExitDest(), loc, {none});
+          SGF.Cleanups.emitCleanupsAndBranch(scope.getExitDest(), loc, {none});
 
           // Just construct the enum directly in the context.
         } else {
           SGF.B.createInjectEnumAddr(loc, resultBuffer, noneDecl);
-          SGF.Cleanups.emitBranchAndCleanups(scope.getExitDest(), loc);
+          SGF.Cleanups.emitCleanupsAndBranch(scope.getExitDest(), loc);
         }
       },
       TrueCount, FalseCount);
@@ -773,12 +773,12 @@ SILValue Lowering::emitIsa(SILGenFunction &SGF, SILLocation loc,
       loc, operand, targetType, SGFContext(),
       [&](ManagedValue value) {
         SILValue yes = SGF.B.createIntegerLiteral(loc, i1Ty, 1);
-        SGF.Cleanups.emitBranchAndCleanups(scope.getExitDest(), loc, yes);
+        SGF.Cleanups.emitCleanupsAndBranch(scope.getExitDest(), loc, yes);
       },
       [&](Optional<ManagedValue> Value) {
         assert(!Value.hasValue() && "Expected take_always semantics");
         SILValue no = SGF.B.createIntegerLiteral(loc, i1Ty, 0);
-        SGF.Cleanups.emitBranchAndCleanups(scope.getExitDest(), loc, no);
+        SGF.Cleanups.emitCleanupsAndBranch(scope.getExitDest(), loc, no);
       });
 
   auto contBB = scope.exit();

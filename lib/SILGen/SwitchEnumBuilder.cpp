@@ -40,7 +40,7 @@ void SwitchCaseFullExpr::exitAndBranch(SILLocation loc,
     return;
   }
 
-  SGF.Cleanups.emitBranchAndCleanups(branchDest.getJumpDest(), loc, branchArgs);
+  SGF.Cleanups.emitCleanupsAndBranch(branchDest.getJumpDest(), loc, branchArgs);
 }
 
 void SwitchCaseFullExpr::exit() {

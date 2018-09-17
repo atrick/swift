@@ -828,11 +828,13 @@ void EnumElementPatternInitialization::emitEnumMatch(
   // the positive case, a cleanup will be emitted for the initialization on the
   // negative path... but the actual initialization happened on the positive
   // path, causing a use (the destroy on the negative path) to be created that
-  // does not dominate its definition (in the positive path).
+  // is not dominated by its definition (in the positive path).
   auto handler = [&SGF, &loc, &failureDest](ManagedValue mv,
                                             SwitchCaseFullExpr &&expr) {
     expr.exit();
-    SGF.Cleanups.emitBranchAndCleanups(failureDest, loc);
+    SGF.Cleanups.emitCleanupsAndBranch(failureDest, loc);
+    //!!!
+    llvm::dbgs() << "### Enum .none cleanup:\n" << *failureDest.getBlock();
   };
 
   // If we have a binary enum, do not emit a true default case. This ensures
