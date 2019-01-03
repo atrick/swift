@@ -13,6 +13,12 @@
 #include "swift/SILOptimizer/Utils/PerformanceInlinerUtils.h"
 #include "swift/AST/Module.h"
 #include "swift/SILOptimizer/Utils/Local.h"
+#include "llvm/Support/CommandLine.h"
+
+llvm::cl::opt<std::string>
+    SILInlineNeverFuns("sil-inline-never-functions", llvm::cl::init(""),
+                       llvm::cl::desc("Never inline functions whose name "
+                                      "includes this string."));
 
 //===----------------------------------------------------------------------===//
 //                               ConstantTracker
@@ -717,6 +723,10 @@ SILFunction *swift::getEligibleFunction(FullApplySite AI,
   if (Callee->getInlineStrategy() == NoInline) {
     return nullptr;
   }
+
+  if (!SILInlineNeverFuns.empty()
+      && Callee->getName().find(SILInlineNeverFuns, 0) != StringRef::npos)
+    return nullptr;
 
   if (!Callee->shouldOptimize()) {
     return nullptr;
