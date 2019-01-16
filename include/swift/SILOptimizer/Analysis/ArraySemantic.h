@@ -179,9 +179,6 @@ public:
 
   /// Could this array be backed by an NSArray.
   bool mayHaveBridgedObjectElementType() const;
-  
-  /// Can this function be inlined by the early inliner.
-  bool canInlineEarly() const;
 
 protected:
   /// Validate the signature of this call.

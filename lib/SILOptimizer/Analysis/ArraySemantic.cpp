@@ -584,22 +584,6 @@ bool swift::ArraySemanticsCall::mayHaveBridgedObjectElementType() const {
   return true;
 }
 
-bool swift::ArraySemanticsCall::canInlineEarly() const {
-  switch (getKind()) {
-    default:
-      return false;
-    case ArrayCallKind::kAppendContentsOf:
-    case ArrayCallKind::kReserveCapacityForAppend:
-    case ArrayCallKind::kAppendElement:
-      // append(Element) calls other semantics functions. Therefore it's
-      // important that it's inlined by the early inliner (which is before all
-      // the array optimizations). Also, this semantics is only used to lookup
-      // Array.append(Element), so inlining it does not prevent any other
-      // optimization.
-      return true;
-  }
-}
-
 SILValue swift::ArraySemanticsCall::getInitializationCount() const {
   if (getKind() == ArrayCallKind::kArrayUninitialized) {
     // Can be either a call to _adoptStorage or _allocateUninitialized.
