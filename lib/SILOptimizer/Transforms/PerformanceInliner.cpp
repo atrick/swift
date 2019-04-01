@@ -101,7 +101,7 @@ class SILPerformanceInliner {
     FastPathBuiltinBenefit = RemovedCallBenefit + 40,
 
     /// The benefit of inlining a function with a semantic call site.
-    SemanticCallBenefit = RemovedCallBenefit + 100,
+    SemanticCallBenefit = RemovedCallBenefit + 50,
 
     /// The benefit of being able to devirtualize a call.
     DevirtualizedCallBenefit = RemovedCallBenefit + 300,
