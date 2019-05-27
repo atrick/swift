@@ -182,7 +182,11 @@ public:
 
   bool isStackAddrInCaller(SILValue val) {
     if (SILValue Param = getParam(stripAddressProjections(val))) {
-      return isa<AllocStackInst>(stripAddressProjections(Param));
+      SILValue addr = stripAddressProjections(Param);
+      if (auto *allocRef = dyn_cast<AllocRefInst>(addr))
+        return allocRef->canAllocOnStack();
+
+      return isa<AllocStackInst>(addr);
     }
     return false;
   }
