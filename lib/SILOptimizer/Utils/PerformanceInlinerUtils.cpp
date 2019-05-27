@@ -48,6 +48,8 @@ void ConstantTracker::trackInst(SILInstruction *inst) {
 SILValue ConstantTracker::scanProjections(SILValue addr,
                                           SmallVectorImpl<Projection> *Result) {
   for (;;) {
+    addr = stripAddressAccess(addr);
+
     if (auto *I = Projection::isAddressProjection(addr)) {
       if (Result) {
         Result->push_back(Projection(I));
