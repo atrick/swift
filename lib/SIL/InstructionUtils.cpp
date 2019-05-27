@@ -42,7 +42,7 @@ SILValue swift::getUnderlyingObject(SILValue v) {
     SILValue v2 = stripCasts(v);
     v2 = stripAddressProjections(v2);
     v2 = stripIndexingInsts(v2);
-    v2 = stripOwnershipInsts(v2);
+    v2 = stripAddressAccess(v2);
     if (v2 == v)
       return v2;
     v = v2;
