@@ -555,7 +555,7 @@ bool SILPerformanceInliner::isProfitableToInline(
                           << ", c-w=" << CallerWeight
                           << ", bb=" << Callee->size()
                           << ", c-bb=" << NumCallerBlocks
-                          << "} " << Callee->getName() << '\n');
+                          << "} " << Callee->getName() << "\n    ");
   OptRemark::Emitter::emitOrDebug(DEBUG_TYPE, &ORE, [&]() {
     using namespace OptRemark;
     return RemarkPassed("Inlined", *AI.getInstruction())
