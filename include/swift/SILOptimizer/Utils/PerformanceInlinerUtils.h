@@ -94,6 +94,9 @@ class ConstantTracker {
   // Cache for evaluated constants.
   llvm::SmallDenseMap<BuiltinInst *, IntConst> constCache;
 
+  // Track callee loads from caller-allocated storage.
+  llvm::SmallDenseSet<SILValue> loadsFromCallerAlloc;
+
   // The caller/callee function which is tracked.
   SILFunction *F;
   
@@ -181,8 +184,8 @@ public:
   }
 
   bool isStackAddrInCaller(SILValue val) {
-    if (SILValue Param = getParam(stripAddressProjections(val))) {
-      SILValue addr = stripAddressProjections(Param);
+    if (SILValue Param = getParam(getUnderlyingObject(val))) {
+      SILValue addr = getUnderlyingObject(Param);
       if (auto *allocRef = dyn_cast<AllocRefInst>(addr))
         return allocRef->canAllocOnStack();
 
@@ -195,6 +198,10 @@ public:
   IntConst getIntConst(SILValue val, int depth = 0);
 
   SILBasicBlock *getTakenBlock(TermInst *term);
+
+  bool isLoadFromCallerAlloc(SILValue val) const {
+    return loadsFromCallerAlloc.count(val);
+  }
 };
 
 //===----------------------------------------------------------------------===//

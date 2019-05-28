@@ -79,7 +79,7 @@ class SILPerformanceInliner {
 
     /// The benefit if the operand of an apply gets constant, e.g. if a closure
     /// is passed to an apply instruction in the callee.
-    RemovedClosureBenefit = RemovedCallBenefit + 50,
+    RemovedClosureBenefit = RemovedCallBenefit + 100,
 
     /// The benefit if a load can (probably) eliminated because it loads from
     /// a stack location in the caller.
@@ -264,6 +264,13 @@ bool SILPerformanceInliner::isProfitableToInline(
   SILFunction *Callee = AI.getReferencedFunction();
   bool IsGeneric = AI.hasSubstitutions();
 
+  //!!!
+  if (AI.getFunction()->hasName(
+          "$ss12_SequenceBoxC9_dropLastySay7ElementQzGSiFs06UnfoldA0VyS2iSg_"
+          "SbtG_Tg5")) {
+    llvm::dbgs() << "INLINING INTO _dropLast\n";
+  }
+
   assert(EnableSILInliningOfGenerics || !IsGeneric);
 
   // Start with a base benefit.
@@ -365,6 +372,29 @@ bool SILPerformanceInliner::isProfitableToInline(
         SILInstruction *def = constTracker.getDefInCaller(FAI.getCallee());
         if (def && (isa<FunctionRefInst>(def) || isa<PartialApplyInst>(def)))
           BlockW.updateBenefit(Benefit, RemovedClosureBenefit);
+
+        if (FAI.getFunction()->hasName(
+                "$ss12_SequenceBoxC9_"
+                "dropLastySay7ElementQzGSiFs06UnfoldA0VyS2iSg_SbtG_Tg5")
+            && AI.getFunction()->hasName(
+                "$s4main23run_DropLastAnySequenceyySiF")) {
+          //!!!
+          llvm::dbgs() << "CHECK LOAD\n";
+        }
+
+        //!!! Just check this directly rather then using the set !!!
+
+        // Similarly, if the callee is loaded from storage allocated by the
+        // caller, inlining will likely eliminate the closure.
+        SILValue calleeOrigin = FAI.getCalleeOrigin();
+        while (auto pi = Projection::isObjectProjection(calleeOrigin)) {
+          // Extract a member from a struct/tuple/enum.
+          calleeOrigin = pi->getOperand(0);
+        }
+        if (constTracker.isLoadFromCallerAlloc(calleeOrigin)) {
+          BlockW.updateBenefit(Benefit, RemovedClosureBenefit);
+        }
+
         // Check if inlining the callee would allow for further
         // optimizations like devirtualization or generic specialization. 
         if (!def)
@@ -819,6 +849,14 @@ void SILPerformanceInliner::collectAppliesToInline(
 
       auto *Callee = getEligibleFunction(AI, WhatToInline);
       if (Callee) {
+        //!!!
+        if (Caller->hasName("$s14droplast_own_s23run_DropLastAnySequenceyySiF")
+            && Callee->hasName(
+                "$ss12_SequenceBoxC9_"
+                "dropLastySay7ElementQzGSiFs06UnfoldA0VyS2iSg_SbtG_Tg5")) {
+          llvm::dbgs() << "INLINING Sequence.dropLast?\n";
+          // continue;
+        }
         // Check if we have an always_inline or transparent function. If we do,
         // just add it to our final Applies list and continue.
         if (isInlineAlwaysCallSite(Callee)) {

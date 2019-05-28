@@ -26,20 +26,41 @@ llvm::cl::opt<std::string>
 
 void ConstantTracker::trackInst(SILInstruction *inst) {
   if (auto *LI = dyn_cast<LoadInst>(inst)) {
+    if (callerTracker
+        && inst->getFunction()->hasName(
+            "$ss12_SequenceBoxC9_dropLastySay7ElementQzGSiFs06UnfoldA0VyS2iSg_"
+            "SbtG_Tg5")
+        && callerTracker->F->hasName("$s4main23run_DropLastAnySequenceyySiF")) {
+      //!!!
+      llvm::dbgs() << "TRACK LOAD\n";
+    }
+
     SILValue baseAddr = scanProjections(LI->getOperand());
+    if (!baseAddr)
+      return;
+
     if (SILInstruction *loadLink = getMemoryContent(baseAddr))
       links[LI] = loadLink;
+
+    if (callerTracker && baseAddr->getFunction() == callerTracker->F
+        && isa<AllocationInst>(baseAddr)) {
+      loadsFromCallerAlloc.insert(LI);
+    }
   } else if (auto *SI = dyn_cast<StoreInst>(inst)) {
     SILValue baseAddr = scanProjections(SI->getOperand(1));
-    memoryContent[baseAddr] = SI;
+    if (baseAddr)
+      memoryContent[baseAddr] = SI;
   } else if (auto *CAI = dyn_cast<CopyAddrInst>(inst)) {
     if (!CAI->isTakeOfSrc()) {
       // Treat a copy_addr as a load + store
       SILValue loadAddr = scanProjections(CAI->getOperand(0));
+      if (!loadAddr)
+        return;
+
       if (SILInstruction *loadLink = getMemoryContent(loadAddr)) {
         links[CAI] = loadLink;
-        SILValue storeAddr = scanProjections(CAI->getOperand(1));
-        memoryContent[storeAddr] = CAI;
+        if (SILValue storeAddr = scanProjections(CAI->getOperand(1)))
+          memoryContent[storeAddr] = CAI;
       }
     }
   }
@@ -48,7 +69,7 @@ void ConstantTracker::trackInst(SILInstruction *inst) {
 SILValue ConstantTracker::scanProjections(SILValue addr,
                                           SmallVectorImpl<Projection> *Result) {
   for (;;) {
-    addr = stripAddressAccess(addr);
+    addr = stripCasts(addr);
 
     if (auto *I = Projection::isAddressProjection(addr)) {
       if (Result) {

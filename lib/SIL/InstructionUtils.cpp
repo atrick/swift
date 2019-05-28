@@ -29,6 +29,7 @@ SILValue swift::stripOwnershipInsts(SILValue v) {
       return v;
     case ValueKind::CopyValueInst:
     case ValueKind::BeginBorrowInst:
+    case ValueKind::BeginAccessInst:
       v = cast<SingleValueInstruction>(v)->getOperand(0);
     }
   }
@@ -42,7 +43,7 @@ SILValue swift::getUnderlyingObject(SILValue v) {
     SILValue v2 = stripCasts(v);
     v2 = stripAddressProjections(v2);
     v2 = stripIndexingInsts(v2);
-    v2 = stripAddressAccess(v2);
+    v2 = stripOwnershipInsts(v2);
     if (v2 == v)
       return v2;
     v = v2;
