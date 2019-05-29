@@ -183,15 +183,12 @@ public:
     return nullptr;
   }
 
-  bool isStackAddrInCaller(SILValue val) {
-    if (SILValue Param = getParam(getUnderlyingObject(val))) {
-      SILValue addr = getUnderlyingObject(Param);
-      if (auto *allocRef = dyn_cast<AllocRefInst>(addr))
-        return allocRef->canAllocOnStack();
+  bool isAllocatedInCaller(SILValue val) {
+    SILValue Param = getParam(getUnderlyingObject(val));
+    if (!Param)
+      return false;
 
-      return isa<AllocStackInst>(addr);
-    }
-    return false;
+    return isa<AllocationInst>(getUnderlyingObject(Param));
   }
 
   // Gets the estimated integer constant of a value.

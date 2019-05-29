@@ -444,14 +444,18 @@ bool SILPerformanceInliner::isProfitableToInline(
           BlockW.updateBenefit(Benefit, GenericSpecializationBenefit);
         }
       } else if (auto *LI = dyn_cast<LoadInst>(&I)) {
-        // Check if it's a load from a stack location in the caller. Such a load
-        // might be optimized away if inlined.
-        if (constTracker.isStackAddrInCaller(LI->getOperand()))
-          BlockW.updateBenefit(Benefit, RemovedLoadBenefit);
+        // Check if it's a load from storage allocated by the caller. Such a
+        // load might be optimized away if inlined.
+        if (constTracker.isAllocatedInCaller(LI->getOperand())) {
+          if (isa<SILFunctionType>(LI->getType().getASTType()))
+            BlockW.updateBenefit(Benefit, RemovedClosureBenefit);
+          else
+            BlockW.updateBenefit(Benefit, RemovedLoadBenefit);
+        }
       } else if (auto *SI = dyn_cast<StoreInst>(&I)) {
-        // Check if it's a store to a stack location in the caller. Such a load
+        // Check if it's a store allocated by the caller. Such a store
         // might be optimized away if inlined.
-        if (constTracker.isStackAddrInCaller(SI->getDest()))
+        if (constTracker.isAllocatedInCaller(SI->getDest()))
           BlockW.updateBenefit(Benefit, RemovedStoreBenefit);
       } else if (isa<StrongReleaseInst>(&I) || isa<ReleaseValueInst>(&I)) {
         SILValue Op = stripCasts(I.getOperand(0));
