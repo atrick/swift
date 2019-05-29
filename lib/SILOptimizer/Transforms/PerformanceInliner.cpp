@@ -257,6 +257,37 @@ bool SILPerformanceInliner::profileBasedDecision(
   return true;
 }
 
+// Return true if this call is is a method call to a "regular" class
+// type. Presumably, most class methods do not implement low-cost abstractions
+// that are critical to compile away. However, if the class does look like a
+// low-cost abstraction, then return false. Currently, this is determined by
+// checking if the class is directly allocated in the caller. In that case the
+// class may be used for a transient wrapper, which should be aggressively
+// optimized.
+static bool checkRegularClassMethod(FullApplySite AI) {
+  SILFunction *Callee = AI.getReferencedFunction();
+
+  // Avoiding coroutine allocation overheads is extremely valuable.
+  if (isa<BeginApplyInst>(AI))
+    return false;
+
+  // Don't inline class methods.
+  if (!Callee->hasSelfParam())
+    return false;
+
+  auto SelfTy = Callee->getLoweredFunctionType()->getSelfInstanceType();
+  if (!SelfTy->mayHaveSuperclass())
+    return false;
+
+  if (Callee->getRepresentation() != SILFunctionTypeRepresentation::Method)
+    return false;
+
+  if (isa<AllocationInst>(getUnderlyingObject(AI.getSelfArgument())))
+    return false;
+
+  return true;
+}
+
 bool SILPerformanceInliner::isProfitableToInline(
     FullApplySite AI, Weight CallerWeight, ConstantTracker &callerTracker,
     int &NumCallerBlocks,
@@ -277,28 +308,14 @@ bool SILPerformanceInliner::isProfitableToInline(
   int BaseBenefit = RemovedCallBenefit;
 
   // Osize heuristic.
-  //
-  // As a hack, don't apply this at all to coroutine inlining; avoiding
-  // coroutine allocation overheads is extremely valuable.  There might be
-  // more principled ways of getting this effect.
   bool isClassMethodAtOsize = false;
-  if (OptMode == OptimizationMode::ForSize && !isa<BeginApplyInst>(AI)) {
-    // Don't inline into thunks.
+  if (OptMode == OptimizationMode::ForSize) {
+    // Don't inline at all into thunks at -Osize.
     if (AI.getFunction()->isThunk())
       return false;
 
-    // Don't inline class methods.
-    if (Callee->hasSelfParam()) {
-      auto SelfTy = Callee->getLoweredFunctionType()->getSelfInstanceType();
-      if (SelfTy->mayHaveSuperclass() &&
-          Callee->getRepresentation() == SILFunctionTypeRepresentation::Method)
-        isClassMethodAtOsize = true;
-    }
-    // Use command line option to control inlining in Osize mode.
-    const uint64_t CallerBaseBenefitReductionFactor = AI.getFunction()->getModule().getOptions().CallerBaseBenefitReductionFactor;
-    BaseBenefit = BaseBenefit / CallerBaseBenefitReductionFactor;
+    isClassMethodAtOsize = checkRegularClassMethod(AI);
   }
-
   // It is always OK to inline a simple call.
   // TODO: May be consider also the size of the callee?
   if (isPureCall(AI, SEA)) {
