@@ -679,7 +679,7 @@ mayPointTo(CGNode *pointer, CGNode *pointee) const {
   // Condition 3 is satisfied by traversing the connection graph backward from
   // \p pointee. If the traversal succeeds without encountering \p pointer, then
   // no points-to path exists.
-  if (!pointee->escapesInsideFunction(isNotAliasingArgument(pointee->V))) {
+  if (!pointee->escapesInsideFunction()) {
     assert(pointsToLocalObject(pointee->V));
     if (backwardTraverse(pointee, [pointer](CGNode *currentNode) {
           return currentNode != pointer;
@@ -706,8 +706,7 @@ mayPointTo(CGNode *pointer, CGNode *pointee) const {
   // traversal completes without halting.
   if (forwardTraverse(pointer, [pointee](CGNode *currentNode) {
         return currentNode != pointee
-               && !currentNode->escapesInsideFunction(
-                   isNotAliasingArgument(currentNode->V));
+               && !currentNode->escapesInsideFunction();
       })) {
     return false;
   }
@@ -1961,7 +1960,7 @@ bool EscapeAnalysis::canEscapeToUsePoint(SILValue V, SILNode *UsePoint,
 
   // First check if there are escape paths which we don't explicitly see
   // in the graph.
-  if (Node->escapesInsideFunction(isNotAliasingArgument(V)))
+  if (Node->escapesInsideFunction())
     return true;
 
   // No hidden escapes: check if the Node is reachable from the UsePoint.
@@ -1981,7 +1980,7 @@ bool EscapeAnalysis::canEscapeToUsePoint(SILValue V, SILNode *UsePoint,
   // As V1's content node is the same as V's content node, we also make the
   // check for the content node.
   CGNode *ContentNode = ConGraph->getContentNode(Node);
-  if (ContentNode->escapesInsideFunction(false))
+  if (ContentNode->escapesInsideFunction())
     return true;
 
   if (ConGraph->isUsePoint(UsePoint, ContentNode))
@@ -2043,10 +2042,10 @@ bool EscapeAnalysis::canPointToSameMemory(SILValue V1, SILValue V2) {
     return true;
 
   // Finish the check for one value being a non-escaping local object.
-  if (isLocal1 && Node1->escapesInsideFunction(isNotAliasingArgument(V1)))
+  if (isLocal1 && Node1->escapesInsideFunction())
     isLocal1 = false;
 
-  if (isLocal2 && Node2->escapesInsideFunction(isNotAliasingArgument(V2)))
+  if (isLocal2 && Node2->escapesInsideFunction())
     isLocal2 = false;
 
   if (!isLocal1 && !isLocal2)

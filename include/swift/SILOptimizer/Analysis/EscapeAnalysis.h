@@ -294,7 +294,7 @@ public:
         case EscapeState::Return:
           return false;
         case EscapeState::Arguments:
-          return !isNotAliasingArgument;
+          return !isNotAliasingArgument(V);
         case EscapeState::Global:
           return true;
       }
