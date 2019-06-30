@@ -673,7 +673,7 @@ bool AliasAnalysis::canApplyDecrementRefCount(FullApplySite FAS, SILValue Ptr) {
     if (ArgEffect.mayRelease()) {
       // The function may release this argument, so check if the pointer can
       // escape to it.
-      if (EA->canEscapeToValue(Ptr, FAS.getArgument(Idx)))
+      if (EA->mayPointTo(FAS.getArgument(Idx), Ptr))
         return true;
     }
   }
@@ -691,15 +691,17 @@ bool AliasAnalysis::canBuiltinDecrementRefCount(BuiltinInst *BI, SILValue Ptr) {
 
     // A builtin can only release an object if it can escape to one of the
     // builtin's arguments.
-    if (EA->canEscapeToValue(Ptr, Arg))
+    if (EA->mayPointTo(Arg, Ptr))
       return true;
   }
   return false;
 }
 
-
-bool AliasAnalysis::mayValueReleaseInterfereWithInstruction(SILInstruction *User,
-                                                            SILValue Ptr) {
+// If Ptr's deinitializer can release any values used by User, then this is an
+// interference. (The retains that originally forced liveness of those values
+// may have already been eliminated).
+bool AliasAnalysis::mayValueReleaseInterfereWithInstruction(
+    SILInstruction *User, SILValue Ptr) {
   // TODO: Its important to make this as precise as possible.
   //
   // TODO: Eventually we can plug in some analysis on the what the release of
@@ -713,25 +715,15 @@ bool AliasAnalysis::mayValueReleaseInterfereWithInstruction(SILInstruction *User
     return false;
 
   // These instructions do read or write memory, get memory accessed.
-  SILValue V = getAccessedMemory(User);
-  if (!V)
+  SILValue UserVal = getAccessedMemory(User);
+  if (!UserVal)
     return true;
 
-  // Is this a local allocation ?
-  if (!pointsToLocalObject(V))
-    return true;
-
-  // This is a local allocation.
-  // The most important check: does the object escape the current function?
-  auto LO = getUnderlyingObject(V);
-  auto *ConGraph = EA->getConnectionGraph(User->getFunction());
-  auto *Node = ConGraph->getNodeOrNull(LO, EA);
-  if (Node && !Node->escapes())
-    return false;
-
-  // This is either a non-local allocation or a local allocation that escapes.
-  // We failed to prove anything, it could be read or written by the deinit.
-  return true;
+  // If the released 'Ptr' can reach 'UserVal' in the object graph, then
+  // releasing it early may destroy the object accessed by 'UserVal'.
+  // Note that we only care about avoiding a dangling pointer. The memory side
+  // affects of Release are unordered.
+  return EA->mayPointTo(Ptr, UserVal);
 }
 
 bool swift::isLetPointer(SILValue V) {

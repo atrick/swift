@@ -23,6 +23,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 using namespace swift;
+using CGNode = EscapeAnalysis::CGNode;
 
 static bool isExtractOfArrayUninitializedPointer(TupleExtractInst *TEI) {
   if (TEI->getFieldNo() == 1) {
@@ -93,6 +94,19 @@ static ValueBase *skipProjections(ValueBase *V) {
     }
   }
   llvm_unreachable("there is no escape from an infinite loop");
+}
+
+template <typename Visitor>
+bool EscapeAnalysis::CGNode::visitSuccessors(Visitor &&visitor) const {
+  if (pointsTo) {
+    if (!visitor(pointsTo))
+      return false;
+  }
+  for (CGNode *def : defersTo) {
+    if (!visitor(def))
+      return false;
+  }
+  return true;
 }
 
 void EscapeAnalysis::ConnectionGraph::clear() {
@@ -440,15 +454,12 @@ void EscapeAnalysis::ConnectionGraph::computeUsePoints() {
   bool Changed = false;
   do {
     Changed = false;
-
     for (CGNode *Node : Nodes) {
       // Propagate the bits to all successor nodes.
-      if (Node->pointsTo) {
-        Changed |= Node->pointsTo->mergeUsePoints(Node);
-      }
-      for (CGNode *Def : Node->defersTo) {
-        Changed |= Def->mergeUsePoints(Node);
-      }
+      Node->visitSuccessors([&Changed, Node](CGNode *succ) {
+        Changed |= succ->mergeUsePoints(Node);
+        return true;
+      });
     }
   } while (Changed);
 }
@@ -575,30 +586,132 @@ getUsePoints(CGNode *Node, llvm::SmallVectorImpl<SILNode *> &UsePoints) {
   }
 }
 
-bool EscapeAnalysis::ConnectionGraph::isReachable(CGNode *From, CGNode *To) {
-  // See if we can reach the From-node by transitively visiting the
-  // predecessor nodes of the To-node.
-  // Usually nodes have few predecessor nodes and the graph depth is small.
-  // So this should be fast.
-  llvm::SmallVector<CGNode *, 8> WorkList;
-  WorkList.push_back(From);
-  From->isInWorkList = true;
-  for (unsigned Idx = 0; Idx < WorkList.size(); ++Idx) {
-    CGNode *Reachable = WorkList[Idx];
-    if (Reachable == To) {
-      clearWorkListFlags(WorkList);
-      return true;
-    }
-    for (Predecessor Pred : Reachable->Preds) {
-      CGNode *PredNode = Pred.getPointer();
-      if (!PredNode->isInWorkList) {
-        PredNode->isInWorkList = true;
-        WorkList.push_back(PredNode);
+// Traverse backward from startNode and return true if \p visitor returned true
+// for all reaching nodes.
+//
+// CGNodeVisitor takes the current CGNode and returns true if traversal should
+// proceed. If CGNodeVisitor returns false, the traversal halts, and this
+// function returns false.
+template <typename CGNodeVisitor>
+bool EscapeAnalysis::ConnectionGraph::backwardTraverse(
+    CGNode *startNode, CGNodeVisitor &&visitor) {
+  llvm::SmallVector<CGNode *, 8> worklist;
+  worklist.push_back(startNode);
+  startNode->isInWorkList = true;
+
+  for (unsigned idx = 0; idx < worklist.size(); ++idx) {
+    CGNode *reachingNode = worklist[idx];
+
+    for (Predecessor pred : reachingNode->Preds) {
+      CGNode *predNode = pred.getPointer();
+      if (predNode->isInWorkList)
+        continue;
+
+      if (!visitor(predNode)) {
+        clearWorkListFlags(worklist);
+        return false;
       }
+      predNode->isInWorkList = true;
+      worklist.push_back(predNode);
     }
   }
-  clearWorkListFlags(WorkList);
-  return false;
+  clearWorkListFlags(worklist);
+  return true;
+}
+
+// Traverse forward from startNode and return true if \p visitor returned true
+// for all reachable nodes.
+//
+// CGNodeVisitor takes the current CGNode and returns true if traversal should
+// proceed. If CGNodeVisitor returns false, the traversal halts, and this
+// function returns false.
+template <typename CGNodeVisitor>
+bool EscapeAnalysis::ConnectionGraph::forwardTraverse(CGNode *startNode,
+                                                      CGNodeVisitor &&visitor) {
+  llvm::SmallVector<CGNode *, 8> worklist;
+  worklist.push_back(startNode);
+  startNode->isInWorkList = true;
+
+  auto visitSucc = [&](CGNode *succNode) {
+    if (succNode->isInWorkList)
+      return true; // continue to the next successor
+
+    if (!visitor(succNode))
+      return false;
+
+    succNode->isInWorkList = true;
+    worklist.push_back(succNode);
+    return true; // continue to the next successor
+  };
+  for (unsigned idx = 0; idx < worklist.size(); ++idx) {
+    CGNode *reachableNode = worklist[idx];
+    if (!reachableNode->visitSuccessors(visitSucc)) {
+      clearWorkListFlags(worklist);
+      return false;
+    }
+  }
+  clearWorkListFlags(worklist);
+  return true;
+}
+
+// Returns false only if it can be proven that pointer cannot reach pointee via
+// the object graph.
+bool EscapeAnalysis::ConnectionGraph::
+mayPointTo(CGNode *pointer, CGNode *pointee) const {
+  assert(pointee->Type == NodeType::Content && "Pointee must be content");
+
+  // Case #1: non-escaping allocated pointee.
+  //
+  // To prove that pointer cannot point to the non-escaping pointee:
+  //
+  // 1. Pointee cannot escape within this function (except via return).
+  //    (It may be locally allocated or an exclusive address-type argument.)
+  //
+  // 2. No connection graph path can exist from a globally escaping node to
+  //    pointee.
+  //
+  // 3. No connection graph path can exist from the pointer to pointee
+  //    (traversing only non-globally-escaping nodes).
+  //
+  // Conditions 1 & 2 are satisfied simply by checking the escaping status of
+  // the `pointee` node itself.
+  //
+  // Condition 3 is satisfied by traversing the connection graph backward from
+  // \p pointee. If the traversal succeeds without encountering \p pointer, then
+  // no points-to path exists.
+  if (!pointee->escapesInsideFunction(isNotAliasingArgument(pointee->V))) {
+    assert(pointsToLocalObject(pointee->V));
+    if (backwardTraverse(pointee, [pointer](CGNode *currentNode) {
+          return currentNode != pointer;
+        })) {
+      return false;
+    }
+  }
+  // Case #2: non-escaping pointer.
+  //
+  // To prove that non-escaping pointer cannot point to pointee:
+  //
+  // 1. Pointer cannot escape within this function (except via return).
+  //    (It may be locally allocated or an exclusive address-type argument.)
+  //
+  // 2. No connection graph path exists to a globally escaping node from
+  //    pointer.
+  //
+  // 3. No connection graph path exists from the pointer to pointee (traversing
+  //    only non-globally-escaping nodes).
+  //
+  // All conditions are checked during a forward graph traversal from
+  // pointee. The traversal halts as soon as it either reaches a node that
+  // escapes the function or reaches the pointee. Return false only if the
+  // traversal completes without halting.
+  if (forwardTraverse(pointer, [pointee](CGNode *currentNode) {
+        return currentNode != pointee
+               && !currentNode->escapesInsideFunction(
+                   isNotAliasingArgument(currentNode->V));
+      })) {
+    return false;
+  }
+  return true;
 }
 
 
@@ -1408,18 +1521,22 @@ void EscapeAnalysis::analyzeInstruction(SILInstruction *I,
     case SILInstructionKind::StrongReleaseInst:
     case SILInstructionKind::ReleaseValueInst: {
       SILValue OpV = I->getOperand(0);
-      if (CGNode *AddrNode = ConGraph->getNode(OpV, this)) {
-        // A release instruction may deallocate the pointer operand. This may
-        // capture any content of the released object, but not the pointer to
-        // the object itself (because it will be a dangling pointer after
-        // deallocation).
-        CGNode *CapturedByDeinit = ConGraph->getContentNode(AddrNode);
-        CapturedByDeinit = ConGraph->getContentNode(CapturedByDeinit);
-        if (deinitIsKnownToNotCapture(OpV)) {
-          CapturedByDeinit = ConGraph->getContentNode(CapturedByDeinit);
-        }
-        ConGraph->setEscapesGlobal(CapturedByDeinit);
-      }
+      CGNode *AddrNode = ConGraph->getNode(OpV, this);
+      if (!AddrNode)
+        return;
+
+      if (deinitIsKnownToNotCapture(OpV))
+        return;
+
+      // A release instruction may deallocate the pointer operand. This may
+      // capture anything pointed to by the released object, but not the pointer
+      // to the object itself (because it will be a dangling pointer after
+      // deallocation).
+      CGNode *FieldContent = ConGraph->getContentNode(AddrNode);
+      FieldContent->visitSuccessors([ConGraph](CGNode *succNode) {
+        ConGraph->setEscapesGlobal(succNode);
+        return true;
+      });
       return;
     }
 
@@ -1906,24 +2023,6 @@ static SILFunction *getCommonFunction(SILValue V1, SILValue V2) {
   return F;
 }
 
-bool EscapeAnalysis::canEscapeToValue(SILValue V, SILValue To) {
-  if (!pointsToLocalObject(V))
-    return true;
-
-  SILFunction *F = getCommonFunction(V, To);
-  if (!F)
-    return true;
-  auto *ConGraph = getConnectionGraph(F);
-
-  CGNode *Node = ConGraph->getNodeOrNull(V, this);
-  if (!Node)
-    return true;
-  CGNode *ToNode = ConGraph->getNodeOrNull(To, this);
-  if (!ToNode)
-    return true;
-  return ConGraph->isReachable(Node, ToNode);
-}
-
 bool EscapeAnalysis::canPointToSameMemory(SILValue V1, SILValue V2) {
   // At least one of the values must be a non-escaping local object.
   bool isLocal1 = pointsToLocalObject(V1);
@@ -1977,6 +2076,28 @@ bool EscapeAnalysis::canPointToSameMemory(SILValue V1, SILValue V2) {
     return Content1 == Content2;
   }
   return true;
+}
+
+bool EscapeAnalysis::mayPointTo(SILValue pointer, SILValue pointee) {
+  SILFunction *f = getCommonFunction(pointer, pointee);
+  if (!f)
+    return true;
+
+  auto *conGraph = getConnectionGraph(f);
+
+  CGNode *pointerNode = conGraph->getNodeOrNull(pointer, this);
+  if (!pointerNode)
+    return true;
+
+  CGNode *pointeeNode = conGraph->getNodeOrNull(pointee, this);
+  if (!pointeeNode)
+    return true;
+
+  CGNode *pointeeContent = pointeeNode->getContentNodeOrNull();
+  if (!pointeeContent)
+    return true;
+
+  return conGraph->mayPointTo(pointerNode, pointeeContent);
 }
 
 bool EscapeAnalysis::canParameterEscape(FullApplySite FAS, int ParamIdx,

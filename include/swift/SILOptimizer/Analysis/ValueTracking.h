@@ -24,7 +24,7 @@ namespace swift {
 
 /// Returns true if \p V is a function argument which may not alias to
 /// any other pointer in the function.
-/// The \p assumeInoutIsNotAliasing specifies in no-aliasing is assumed for
+/// The \p assumeInoutIsNotAliasing specifies if no-aliasing is assumed for
 /// the @inout convention. See swift::isNotAliasedIndirectParameter().
 bool isNotAliasingArgument(SILValue V, InoutAliasingAssumption isInoutAliasing =
                                          InoutAliasingAssumption::Aliasing);

@@ -153,7 +153,7 @@ public:
     EscapeState State = EscapeState::None;
 
     /// If true, the pointsTo is a real edge in the graph. Otherwise it is not
-    /// and edge (e.g. this does not appear in the pointsTo Preds list), but
+    /// an edge (e.g. this does not appear in the pointsTo Preds list), but
     /// still must point to the same Content node as all successor nodes.
     bool pointsToIsEdge = false;
     
@@ -163,14 +163,13 @@ public:
     /// True if the merge is finished (see mergeTo). In this state this node
     /// is completely unlinked from the graph,
     bool isMerged = false;
-    
+
     /// The type of the node (mainly distinguishes between content and value
     /// nodes).
     NodeType Type;
     
     /// The constructor.
-    CGNode(ValueBase *V, NodeType Type) :
-        V(V), UsePoints(0), Type(Type) { }
+    CGNode(ValueBase *V, NodeType Type): V(V), UsePoints(0), Type(Type) {}
 
     /// Merges the state from another state and returns true if it changed.
     bool mergeEscapeState(EscapeState OtherState) {
@@ -270,7 +269,7 @@ public:
         return false;
       return true;
     }
-    
+
     friend class CGNodeMap;
     friend class ConnectionGraph;
     friend struct ::CGForDotView;
@@ -307,6 +306,13 @@ public:
     CGNode *getContentNodeOrNull() const {
       return pointsTo;
     }
+
+    /// Visit all successors of this node in the connection graph until \p
+    /// visitor returns false.
+    ///
+    /// Return true if all successors were visited without \p visitor returning
+    /// false.
+    template <typename Visitor> bool visitSuccessors(Visitor &&visitor) const;
   };
 
 private:
@@ -547,6 +553,24 @@ public:
     /// lookup-up with getNode() anymore.
     void removeFromGraph(ValueBase *V) { Values2Nodes.erase(V); }
 
+    /// Traverse backward from startNode and return true if \p visitor returned
+    /// true for all reaching nodes.
+    ///
+    /// CGNodeVisitor takes the current CGNode and returns true if traversal
+    /// should proceed. If CGNodeVisitor returns false, the traversal halts, and
+    /// this function returns false.
+    template <typename CGNodeVisitor>
+    static bool backwardTraverse(CGNode *startNode, CGNodeVisitor &&visitor);
+
+    /// Traverse forward from startNode and return true if \p visitor returned
+    /// true for all reachable nodes.
+    ///
+    /// CGNodeVisitor takes the current CGNode and returns true if traversal
+    /// should proceed. If CGNodeVisitor returns false, the traversal halts, and
+    /// this function returns false.
+    template <typename CGNodeVisitor>
+    static bool forwardTraverse(CGNode *startNode, CGNodeVisitor &&visitor);
+
     /// Returns true if there is a path from \p From to \p To.
     bool isReachable(CGNode *From, CGNode *To);
 
@@ -580,6 +604,10 @@ public:
 
     /// Computes the use point information.
     void computeUsePoints();
+
+    /// Return true if \p pointer may indirectly point to \pointee via object
+    /// references.
+    bool mayPointTo(CGNode *pointer, CGNode *pointee) const;
 
     /// Debug print the graph.
     void print(llvm::raw_ostream &OS) const;
@@ -775,10 +803,9 @@ public:
   /// Note that if \p RI is a retain-instruction always false is returned.
   bool canEscapeTo(SILValue V, RefCountingInst *RI);
 
-  /// Returns true if the value \p V can escape to any other pointer \p To.
-  /// This means that either \p To is the same as \p V or contains a reference
-  /// to \p V.
-  bool canEscapeToValue(SILValue V, SILValue To);
+  /// Return true if \p pointer may indirectly point to \pointee via object
+  /// references.
+  bool mayPointTo(SILValue pointer, SILValue pointee);
 
   /// Returns true if the parameter with index \p ParamIdx can escape in the
   /// called function of apply site \p FAS.
