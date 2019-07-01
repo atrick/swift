@@ -142,10 +142,22 @@ class SILPerformanceInliner {
   OptimizationMode OptMode;
 
 #ifndef NDEBUG
+  StringRef inlineModeString() {
+    switch (WhatToInline) {
+    case InlineSelection::NoSemanticsAndGlobalInit:
+      return "Early";
+    case InlineSelection::NoGlobalInit:
+      return "Middle";
+    case InlineSelection::Everything:
+      return "Late";
+    }
+  }
+
   SILFunction *LastPrintedCaller = nullptr;
   void dumpCaller(SILFunction *Caller) {
     if (Caller != LastPrintedCaller) {
-      llvm::dbgs() << "\nInline into caller: " << Caller->getName() << '\n';
+      llvm::dbgs() << "\nInline " << inlineModeString() << " into caller "
+                   << Caller->getName() << '\n';
       LastPrintedCaller = Caller;
     }
   }
