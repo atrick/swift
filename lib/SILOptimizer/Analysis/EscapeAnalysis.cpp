@@ -96,6 +96,32 @@ static ValueBase *skipProjections(ValueBase *V) {
 
 void EscapeAnalysis::ConnectionGraph::clear() {
   Values2Nodes.clear();
+  if (Nodes.size() > 200) {
+    //!!!
+    llvm::dbgs() << F->getName() << "\n"
+                 << "Num nodes " << Nodes.size();
+    //!!!!
+    NodeAllocator.PrintStats();
+
+    int multiDefer = 0;
+    int singleDefer = 0;
+    int multiPreds = 0;
+    int singlePreds = 0;
+    for (CGNode *Nd : Nodes) {
+      if (Nd->defersTo.size() > 1)
+        ++multiDefer;
+      else
+        ++singleDefer;
+      if (Nd->Preds.size() > 1)
+        ++multiPreds;
+      else
+        ++singlePreds;
+    }
+    llvm::dbgs() << "SingleDefer: " << singleDefer << "\n";
+    llvm::dbgs() << "MultiDefer: " << multiDefer << "\n";
+    llvm::dbgs() << "SinglePreds: " << singlePreds << "\n";
+    llvm::dbgs() << "MultiPreds: " << multiPreds << "\n";
+  }
   Nodes.clear();
   ReturnNode = nullptr;
   UsePoints.clear();
@@ -934,7 +960,8 @@ void EscapeAnalysis::ConnectionGraph::print(llvm::raw_ostream &OS) const {
       OS << '(' << NodeStr(PT) << ')';
       Separator = ", ";
     }
-    llvm::SmallVector<CGNode *, 8> SortedDefers = Nd->defersTo;
+    llvm::SmallVector<CGNode *, 8>
+      SortedDefers(Nd->defersTo.begin(), Nd->defersTo.end());
     sortNodes(SortedDefers);
     for (CGNode *Def : SortedDefers) {
       OS << Separator << NodeStr(Def);

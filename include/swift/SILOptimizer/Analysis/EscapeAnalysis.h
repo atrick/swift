@@ -265,23 +265,33 @@ public:
     CGNode *pointsTo = nullptr;
     
     /// The outgoing defer edges.
-    llvm::SmallVector<CGNode *, 8> defersTo;
+    llvm::TinyPtrVector<CGNode *> defersTo;
     
     /// The predecessor edges (points-to and defer).
-    llvm::SmallVector<Predecessor, 8> Preds;
+    llvm::TinyPtrVector<Predecessor> Preds;
     
     /// If this Content node is merged with another Content node, mergeTo is
     /// the merge destination.
+    ///
+    /// TODO: to save space, this field could be replaced with a side table.
     CGNode *mergeTo = nullptr;
 
     /// Information where the node's value is used in its function.
     /// Each bit corresponds to an argument/instruction where the value is used.
     /// The UsePoints on demand when calling ConnectionGraph::getUsePoints().
+    ///
+    /// TODO: to save space, this field could be replaced with a short lookup.
     SmallBitVector UsePoints;
 
     /// The actual result of the escape analysis. It tells if and how (global or
     /// through arguments) the value escapes.
     EscapeState State = EscapeState::None;
+
+    /// The type of the node (mainly distinguishes between content and value
+    /// nodes).
+    NodeType Type;
+
+    // TODO: If the number of flags exceeds 6, convert them to a bitfield.
 
     /// If true, the pointsTo is a real edge in the graph. Otherwise it is not
     /// and edge (e.g. this does not appear in the pointsTo Preds list), but
@@ -294,11 +304,11 @@ public:
     /// True if the merge is finished (see mergeTo). In this state this node
     /// is completely unlinked from the graph,
     bool isMerged = false;
-    
-    /// The type of the node (mainly distinguishes between content and value
-    /// nodes).
-    NodeType Type;
-    
+
+    bool dummy1 = false;
+    bool dummy2 = false;
+    bool dummy3 = false;
+
     /// The constructor.
     CGNode(ValueBase *V, NodeType Type) : V(V), UsePoints(0), Type(Type) {
       switch (Type) {
@@ -431,8 +441,12 @@ public:
     /// Returns true if the node's value escapes within the function. This
     /// means that any unidentified pointer in the function may alias to
     /// the node's value.
+    ///
     /// Note that in the false-case the node's value can still escape via
     /// the return instruction.
+    ///
+    /// Furthermore, if this node is an exclusive address argument, it does not
+    /// escape, but anything that it points to may have escaped in the caller.
     bool escapesInsideFunction() const {
       switch (getEscapeState()) {
         case EscapeState::None:
@@ -452,6 +466,7 @@ public:
       return pointsTo;
     }
   };
+  static_assert(sizeof(CGNode) <= 219, "CGNode layout overflow");
 
 private:
 
@@ -936,11 +951,11 @@ public:
   bool canParameterEscape(FullApplySite FAS, int ParamIdx,
                           bool checkContentOfIndirectParam);
 
-  /// Returns true if the pointers \p V1 and \p V2 can possibly point to the
+  /// Returns true if the pointers \p V1 and \p V2 may directly point to the
   /// same memory.
-  /// If at least one of the pointers refers to a local object and the
-  /// connection-graph-nodes of both pointers do not point to the same content
-  /// node, the pointers do not alias.
+  ///
+  /// This can be used to determine whether memory access based on these
+  /// addresses may alias.
   bool canPointToSameMemory(SILValue V1, SILValue V2);
 
   /// Invalidate all information in this analysis.
