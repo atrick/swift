@@ -101,7 +101,7 @@ void EscapeAnalysis::ConnectionGraph::clear() {
     llvm::dbgs() << F->getName() << "\n"
                  << "Num nodes " << Nodes.size();
     //!!!!
-    NodeAllocator.PrintStats();
+    //!!!NodeAllocator.PrintStats();
 
     int multiDefer = 0;
     int singleDefer = 0;

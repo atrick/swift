@@ -268,7 +268,8 @@ public:
     llvm::TinyPtrVector<CGNode *> defersTo;
     
     /// The predecessor edges (points-to and defer).
-    llvm::TinyPtrVector<Predecessor> Preds;
+    llvm::SmallVector<Predecessor, 8> Preds;
+    //!!!llvm::TinyPtrVector<Predecessor> Preds;
     
     /// If this Content node is merged with another Content node, mergeTo is
     /// the merge destination.
@@ -291,7 +292,7 @@ public:
     /// nodes).
     NodeType Type;
 
-    // TODO: If the number of flags exceeds 6, convert them to a bitfield.
+    // Note: If the number of flags exceeds 6, convert them to a bitfield.
 
     /// If true, the pointsTo is a real edge in the graph. Otherwise it is not
     /// and edge (e.g. this does not appear in the pointsTo Preds list), but
@@ -466,7 +467,7 @@ public:
       return pointsTo;
     }
   };
-  static_assert(sizeof(CGNode) <= 219, "CGNode layout overflow");
+  //!!!static_assert(sizeof(CGNode) <= 64, "CGNode layout overflow");
 
 private:
 
