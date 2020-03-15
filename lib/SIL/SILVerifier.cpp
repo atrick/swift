@@ -2913,7 +2913,17 @@ public:
           conformance->getType(), AMI->getLookupType(),
           "concrete type lookup requires conformance that matches type");
     }
-
+    // Require the witness_method's lookuptype to match the Self type of the
+    // witness_method's applications. This is useful so that Devirtualization
+    // can directly replace a witness_method with a function_ref without
+    // generating code to copy and writeback Self to and from a different type.
+    for (auto *use : AMI->getUses()) {
+      if (auto applySite = FullApplySite::isa(use->getUser())) {
+        requireSameType(lookupType,
+                        applySite.getSelfArgument()->getType().getASTType(),
+                        "witness lookup type must match apply Self type");
+      }
+    }
     require(AMI->getMember().requiresNewWitnessTableEntry(),
             "method does not have a witness table entry");
   }
