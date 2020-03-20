@@ -33,19 +33,42 @@ class SideEffectAnalysis;
 // Controls the decision to inline functions with @_semantics, @effect and
 // global_init attributes.
 enum class InlineSelection {
-  Everything,
-  NoGlobalInit, // and no availability semantics calls
-  NoSemanticsAndGlobalInit,
-  OnlyInlineAlways,
+  Unoptimized,            // -Onone level, only @inline(__always)
+  PreModuleSerialization, // no @semantics, no @availability
+  PreserveSemantics,      // preserve the deepest level of @semantic calls
+  Everything              // expose full implementation, including global init
 };
 
-// Returns the callee of an apply_inst if it is basically inlinable.
+/// Check if this ApplySite is eligible for inlining. If so, return the callee.
 SILFunction *getEligibleFunction(FullApplySite AI,
                                  InlineSelection WhatToInline);
 
 // Returns true if this is a pure call, i.e. the callee has no side-effects
 // and all arguments are constants.
 bool isPureCall(FullApplySite AI, SideEffectAnalysis *SEA);
+
+/// Transient @_semantic tags can be thrown away immediately, e.g. during early
+/// inlining.
+///
+/// Nested @_semantic tags provide semantics beyond the function body but may be
+/// inlined into their caller to expose the underlying semantic calls.
+///
+/// Fundamental @_semantic tags provide semantics beyond the function body and
+/// should be preserved until late optimization where we begin discarding
+/// semantics. For example, These are may be expected to be hoisted by LICM
+/// after inlining up to the highest level caller.
+enum class SemanticFunctionLevel { Transient, Nested, Fundamental };
+/// Return the SemanticFunctionLevel of \p callee.
+SemanticFunctionLevel getSemanticFunctionLevel(SILFunction *callee);
+
+inline bool isOptimizableSemanticFunction(SILFunction *callee) {
+  return getSemanticFunctionLevel(callee) != SemanticFunctionLevel::Transient;
+}
+
+/// Return true if \p apply calls into an optimizable semantic function from
+/// within another semantic function, or from a "trivial" wrapper.
+bool isNestedSemanticCall(FullApplySite apply);
+
 } // end swift namespace
 
 //===----------------------------------------------------------------------===//

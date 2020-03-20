@@ -148,8 +148,21 @@ class SILPerformanceInliner {
   SILFunction *LastPrintedCaller = nullptr;
   void dumpCaller(SILFunction *Caller) {
     if (Caller != LastPrintedCaller) {
-      llvm::dbgs() << "\nInline into caller: " << Caller->getName() << '\n';
+      llvm::dbgs() << "\nInline " << whatToInlineString()
+                   << " into caller: " << Caller->getName() << '\n';
       LastPrintedCaller = Caller;
+    }
+  }
+  StringRef whatToInlineString() {
+    switch (WhatToInline) {
+    case InlineSelection::Unoptimized:
+      return "Unoptimized";
+    case InlineSelection::PreModuleSerialization:
+      return "PreModuleSerialization";
+    case InlineSelection::PreserveSemantics:
+      return "PreserveSemantics";
+    case InlineSelection::Everything:
+      return "Everything";
     }
   }
 #endif
@@ -321,7 +334,7 @@ bool SILPerformanceInliner::isProfitableToInline(
   // Bail out if this is a generic call of a `@_specialize(exported:)` function
   // and we are in the early inliner. We want to give the generic specializer
   // the opportunity to see specialized call sites.
-  if (IsGeneric && WhatToInline == InlineSelection::NoSemanticsAndGlobalInit  &&
+  if (IsGeneric && WhatToInline <= InlineSelection::PreModuleSerialization &&
       Callee->hasPrespecialization()) {
     return false;
   }
@@ -867,8 +880,13 @@ void SILPerformanceInliner::collectAppliesToInline(
 
       FullApplySite AI = FullApplySite(&*I);
 
-      auto *Callee = getEligibleFunction(AI, WhatToInline);
-      if (Callee) {
+      SILFunction *Callee = AI.getReferencedFunctionOrNull();
+      if (!Callee) {
+        continue;
+      }
+      if (auto *eligibleCallee = getEligibleFunction(AI, WhatToInline)) {
+        assert(Callee == eligibleCallee);
+
         // Check if we have an always_inline or transparent function. If we do,
         // just add it to our final Applies list and continue.
         if (isInlineAlwaysCallSite(Callee)) {
@@ -1072,21 +1090,22 @@ public:
 } // end anonymous namespace
 
 SILTransform *swift::createAlwaysInlineInliner() {
-  return new SILPerformanceInlinerPass(InlineSelection::OnlyInlineAlways,
+  return new SILPerformanceInlinerPass(InlineSelection::Unoptimized,
                                        "InlineAlways");
 }
 
 /// Create an inliner pass that does not inline functions that are marked with
-/// the @_semantics, @_effects or global_init attributes.
+/// the @_semantics, @_effects, availability, or global_init attributes.
 SILTransform *swift::createEarlyInliner() {
-  return new SILPerformanceInlinerPass(
-    InlineSelection::NoSemanticsAndGlobalInit, "Early");
+  return new SILPerformanceInlinerPass(InlineSelection::PreModuleSerialization,
+                                       "Early");
 }
 
-/// Create an inliner pass that does not inline functions that are marked with
-/// the global_init attribute or have an "availability" semantics attribute.
+// The mid-level inliner preserves the lowest level of semantic calls to avoid
+// pessimizing anlayses like EscapeAnlysis and SideEffectAnalysis.
 SILTransform *swift::createPerfInliner() {
-  return new SILPerformanceInlinerPass(InlineSelection::NoGlobalInit, "Middle");
+  return new SILPerformanceInlinerPass(InlineSelection::PreserveSemantics,
+                                       "Middle");
 }
 
 /// Create an inliner pass that inlines all functions that are marked with
