@@ -459,6 +459,8 @@ extension ContiguousArray: RandomAccessCollection, MutableCollection {
 
   /// The number of elements in the array.
   @inlinable
+  @inline(__always)
+  @_semantics("array.get_count")
   public var count: Int {
     return _getCount()
   }

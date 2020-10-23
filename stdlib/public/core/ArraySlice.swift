@@ -261,6 +261,8 @@ extension ArraySlice: _ArrayProtocol {
   ///     // numbers.count == 10
   ///     // numbers.capacity == 10
   @inlinable
+  @inline(__always)
+  @_semantics("array.get_capacity")
   public var capacity: Int {
     return _getCapacity()
   }
@@ -726,6 +728,7 @@ extension ArraySlice: RangeReplaceableCollection {
 
   /// Construct a ArraySlice of `count` uninitialized elements.
   @inlinable
+  @_semantics("array.init")
   internal init(_uninitializedCount count: Int) {
     _precondition(count >= 0, "Can't construct ArraySlice with count < 0")
     // Note: Sinking this constructor into an else branch below causes an extra
