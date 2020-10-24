@@ -323,6 +323,9 @@ void addFunctionPasses(SILPassPipelinePlan &P,
   // late as possible before inlining because it must run between runs of the
   // inliner when the pipeline restarts.
   if (OpLevel == OptimizationLevelKind::MidLevel) {
+    // FIXME: it's not clear if high-level LICM has implicit dependencies on
+    // certain semantic functions *not* being inlined. If so, that needs to be
+    // enforced.
     P.addHighLevelLICM();
     P.addArrayCountPropagation();
     P.addABCOpt();
