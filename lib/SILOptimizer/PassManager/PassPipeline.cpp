@@ -587,6 +587,11 @@ static void addClosureSpecializePassPipeline(SILPassPipelinePlan &P) {
   // Specialize closure.
   P.addClosureSpecializer();
 
+  // This is the first point at which semantic calls are inlined.
+  // Inlining in this pipeline give dead object elimination and closure
+  // specialization another chance to run on the inlined SIL.
+  P.addLateInliner();
+
   // Do the second stack promotion on low-level SIL.
   P.addStackPromotion();
 
