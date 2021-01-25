@@ -101,19 +101,21 @@ private:
   }
 };
 
-/// A utility composed ontop of OwnershipFixupContext that knows how to RAUW a
+/// A utility composed on top of OwnershipFixupContext that knows how to RAUW a
 /// value or a single value instruction with a new value and then fixup
 /// ownership invariants afterwards.
 class OwnershipRAUWHelper {
   OwnershipFixupContext *ctx;
-  SingleValueInstruction *oldValue;
+  SILValue oldValue;
   SILValue newValue;
 
 public:
-  OwnershipRAUWHelper() : ctx(nullptr), oldValue(nullptr), newValue(nullptr) {}
+  OwnershipRAUWHelper() : ctx(nullptr) {}
 
   /// Return an instance of this class if we can perform the specific RAUW
   /// operation ignoring if the types line up. Returns None otherwise.
+  ///
+  /// \p oldValue may be either a SingleValueInstruction or a terminator result.
   ///
   /// DISCUSSION: We do not check that the types line up here so that we can
   /// allow for our users to transform our new value in ways that preserve
@@ -122,8 +124,8 @@ public:
   /// from \p newValue at \p oldValue's must be forwarding. If \p newValue is an
   /// address, then these transforms can only transform the address into a
   /// derived address.
-  OwnershipRAUWHelper(OwnershipFixupContext &ctx,
-                      SingleValueInstruction *oldValue, SILValue newValue);
+  OwnershipRAUWHelper(OwnershipFixupContext &ctx, SILValue oldValue,
+                      SILValue newValue);
 
   /// Returns true if this helper was initialized into a valid state.
   operator bool() const { return isValid(); }
