@@ -288,9 +288,10 @@ void BorrowedLifetimeExtender::extendOverBorrowScope(SILValue ownedValue) {
 //===----------------------------------------------------------------------===//
 
 // Determine whether it is valid to replace \p oldValue with \p newValue by
-// directly checking ownership requirements. This does not determine whether
-// the scope of the newValue can be fully extended.
-static bool hasValidRAUWOwnership(SILValue oldValue, SILValue newValue) {
+// directly checking ownership requirements. This does not determine whether the
+// scope of the newValue can be fully extended.
+bool OwnershipRAUWHelper::hasValidRAUWOwnership(SILValue oldValue,
+                                                SILValue newValue) {
   auto newOwnershipKind = newValue.getOwnershipKind();
 
   // If our new kind is ValueOwnershipKind::None, then we are fine. We
@@ -343,7 +344,7 @@ static bool hasValidRAUWOwnership(SILValue oldValue, SILValue newValue) {
 // recursiveReborrows.
 static bool canFixUpOwnershipForRAUW(SILValue oldValue, SILValue newValue,
                                      OwnershipFixupContext &context) {
-  if (!hasValidRAUWOwnership(oldValue, newValue))
+  if (!OwnershipRAUWHelper::hasValidRAUWOwnership(oldValue, newValue))
     return false;
 
   if (oldValue.getOwnershipKind() != OwnershipKind::Guaranteed)
@@ -361,7 +362,7 @@ static bool canFixUpOwnershipForRAUW(SILValue oldValue, SILValue newValue,
   auto visitReborrow = [&](Operand *endScope) {
     auto borrowingOper = BorrowingOperand(endScope);
     assert(borrowingOper.isReborrow());
-    // TODO: if non-phi reborrows even exist, handle them using a separate
+    // TODO: if non-phi reborrows ever exist, handle them using a separate
     // SILValue list since we don't want to refer directly to phi SILValues.
     reborrows.insert(borrowingOper.getBorrowIntroducingUserResult().value);
     context.recursiveReborrows.push_back(endScope);
@@ -602,6 +603,9 @@ OwnershipLifetimeExtender::createPlusZeroBorrow(SILValue newValue,
   }
   assert(copy && borrow);
 
+  // We don't expect an empty useRange. If it happens, then the newly created
+  // copy will never be destroyed.
+  assert(!useRange.empty());
   auto opRange = makeUserRange(useRange);
   ValueLifetimeAnalysis lifetimeAnalysis(copy, opRange);
   ValueLifetimeAnalysis::Frontier frontier;
@@ -936,7 +940,7 @@ SILBasicBlock::iterator OwnershipRAUWUtility::handleGuaranteed() {
 
 SILBasicBlock::iterator OwnershipRAUWUtility::perform() {
   assert(oldValue->getFunction()->hasOwnership());
-  assert(hasValidRAUWOwnership(oldValue, newValue) &&
+  assert(OwnershipRAUWHelper::hasValidRAUWOwnership(oldValue, newValue) &&
       "Should have checked if can perform this operation before calling it?!");
   // If our new value is just none, we can pass anything to do it so just RAUW
   // and return.
@@ -1051,6 +1055,9 @@ OwnershipRAUWHelper::OwnershipRAUWHelper(OwnershipFixupContext &inputCtx,
   // terminator results.
   assert(isa<SingleValueInstruction>(inputOldValue)
          || cast<SILPhiArgument>(inputOldValue)->isTerminatorResult());
+
+  // Clear the context before populating it anew.
+  ctx->clear();
 
   // Otherwise, lets check if we can perform this RAUW operation. If we can't,
   // set ctx to nullptr to invalidate the helper and return.
@@ -1397,10 +1404,14 @@ OwnershipReplaceSingleUseHelper::OwnershipReplaceSingleUseHelper(
 
   // Otherwise, lets check if we can perform this RAUW operation. If we can't,
   // set ctx to nullptr to invalidate the helper and return.
-  if (!hasValidRAUWOwnership(use->get(), newValue)) {
+  if (!OwnershipRAUWHelper::hasValidRAUWOwnership(use->get(), newValue)) {
     ctx = nullptr;
     return;
   }
+
+  // FIXME:!!! If this does not use canFixUpOwnershipForRAUW, then it needs to
+  // do the equivalent safety checks. At least ensure that the use is not a
+  // PointerEscape. But we should put that check behind a standard utility.
 
   // Then see if our use is a lifetime ending use of a guaranteed value that is
   // a reborrow.
