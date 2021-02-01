@@ -717,7 +717,9 @@ SILBasicBlock::iterator replaceAllUsesAndErase(SingleValueInstruction *svi,
 /// the defining instruction and its end-of-scope instructions are deleted.
 ///
 /// Precondition: \p oldValue must be a SingleValueInstruction or a terminator
-/// result.
+/// result. \p oldValue must be the only result with remaining uses. For
+/// terminators with multiple results, remove all other results for, e.g. via
+/// replaceAllUsesWithUndef().
 ///
 /// If \p oldValue is a terminator result, a new branch instruction is inserted
 /// in place of the old terminator and all basic block successors become

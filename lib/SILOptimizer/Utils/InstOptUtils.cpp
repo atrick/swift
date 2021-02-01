@@ -1981,7 +1981,12 @@ swift::replaceAllUsesAndErase(SILValue oldValue, SILValue newValue,
 
     auto nextii = replaceAllUses(blockArg, newValue,
                                  oldTerm->getParent()->end(), callbacks);
-
+    // Now that oldValue is replaced, the terminator should have no uses
+    // left. The caller should have removed uses from other results.
+    for (auto *succBB : oldTerm->getSuccessorBlocks()) {
+      assert(succBB->getNumArguments() == 1 && "expected terminator result");
+      succBB->eraseArgument(0);
+    }
     auto *newBr = SILBuilderWithScope(oldTerm).createBranch(
       oldTerm->getLoc(), blockArg->getParent());
     callbacks.createdNewInst(newBr);
