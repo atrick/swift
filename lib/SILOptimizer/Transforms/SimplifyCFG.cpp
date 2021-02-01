@@ -21,6 +21,7 @@
 #include "swift/SIL/SILModule.h"
 #include "swift/SIL/SILUndef.h"
 #include "swift/SIL/TerminatorUtils.h"
+#include "swift/SILOptimizer/Analysis/DeadEndBlocksAnalysis.h"
 #include "swift/SILOptimizer/Analysis/DominanceAnalysis.h"
 #include "swift/SILOptimizer/Analysis/ProgramTerminationAnalysis.h"
 #include "swift/SILOptimizer/Analysis/SimplifyInstruction.h"
@@ -199,7 +200,8 @@ private:
   bool canonicalizeSwitchEnums();
   bool simplifyThreadedTerminators();
   bool dominatorBasedSimplifications(SILFunction &Fn, DominanceInfo *DT);
-  bool dominatorBasedSimplify(DominanceAnalysis *DA);
+  bool dominatorBasedSimplify(DominanceAnalysis *DA,
+                              DeadEndBlocksAnalysis *deBlocksAnalysis);
   bool threadEdge(const ThreadInfo &ti);
 
   /// Remove the basic block if it has no predecessors. Returns true
@@ -660,7 +662,8 @@ bool SimplifyCFG::simplifyThreadedTerminators() {
 
 // Simplifications that walk the dominator tree to prove redundancy in
 // conditional branching.
-bool SimplifyCFG::dominatorBasedSimplify(DominanceAnalysis *DA) {
+bool SimplifyCFG::dominatorBasedSimplify(
+    DominanceAnalysis *DA, DeadEndBlocksAnalysis *deBlocksAnalysis) {
   // Get the dominator tree.
   DT = DA->get(&Fn);
 
@@ -688,10 +691,16 @@ bool SimplifyCFG::dominatorBasedSimplify(DominanceAnalysis *DA) {
   do {
     HasChangedInCurrentIter = false;
 
+    if (Changed) {
+      // Force dominator recomputation since we modified the cfg.
+      deBlocksAnalysis->invalidate(&Fn,
+                                   SILAnalysis::InvalidationKind::Everything);
+    }
+    auto *deBlocks = deBlocksAnalysis->get(&Fn);
     // Do dominator based simplification of terminator condition. This does not
     // and MUST NOT change the CFG without updating the dominator tree to
     // reflect such change.
-    if (tryCheckedCastBrJumpThreading(&Fn, DT, BlocksForWorklist)) {
+    if (tryCheckedCastBrJumpThreading(&Fn, DT, deBlocks, BlocksForWorklist)) {
       for (auto BB: BlocksForWorklist)
         addToWorklist(BB);
 
@@ -3359,13 +3368,17 @@ bool SimplifyCFG::run() {
 
   // Do simplifications that require the dominator tree to be accurate.
   DominanceAnalysis *DA = PM->getAnalysis<DominanceAnalysis>();
+  DeadEndBlocksAnalysis *deBlocksAnalysis =
+      PM->getAnalysis<DeadEndBlocksAnalysis>();
 
   if (Changed) {
     // Force dominator recomputation since we modified the cfg.
     DA->invalidate(&Fn, SILAnalysis::InvalidationKind::Everything);
+    deBlocksAnalysis->invalidate(&Fn,
+                                 SILAnalysis::InvalidationKind::Everything);
   }
 
-  Changed |= dominatorBasedSimplify(DA);
+  Changed |= dominatorBasedSimplify(DA, deBlocksAnalysis);
 
   DT = nullptr;
   // Now attempt to simplify the remaining blocks.
