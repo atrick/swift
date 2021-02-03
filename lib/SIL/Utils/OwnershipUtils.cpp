@@ -161,9 +161,11 @@ bool swift::canOpcodeForwardOwnedValues(Operand *use) {
 // points. Transitively find all nested scope-ending instructions by looking
 // through nested reborrows. Nested reborrows are not use points and \p
 // visitReborrow is not called for them.
-static bool
+bool swift::
 findInnerTransitiveGuaranteedUses(SILValue guaranteedValue,
                                   SmallVectorImpl<Operand *> &usePoints) {
+  assert(!BorrowedValue(guaranteedValue) && "must not introduce a new scope");
+
   // Push the value's immediate uses.
   unsigned firstOffset = usePoints.size();
   for (Operand *use : guaranteedValue->getUses()) {

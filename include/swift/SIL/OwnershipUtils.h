@@ -75,6 +75,20 @@ inline bool isForwardingConsume(SILValue value) {
   return canOpcodeForwardOwnedValues(value);
 }
 
+/// Find all "use points" of \p guaranteedValue that determine its lifetime
+/// requirement.
+///
+/// Precondition: \p guaranteedValue is not a BorrowedValue.
+///
+/// This only applies to guaranteed values within a borrow scope, not values
+/// that introduce a new scope. Therefore, none of the uses may be reborrows,
+/// and all use points are naturally dominated.
+/// findExtendedTransitiveGuaranteedUses() can be used instead to gather
+/// use points for arbitrary guaranteed values, including those that
+/// introduce a borrow scope and may be reborrowed.
+bool findInnerTransitiveGuaranteedUses(SILValue guaranteedValue,
+                                       SmallVectorImpl<Operand *> &usePoints);
+
 /// Find all "use points" of a guaranteed value within its enclosing borrow
 /// scope (without looking through reborrows). To find the use points of the
 /// extended borrow scope, after looking through reborrows, use
