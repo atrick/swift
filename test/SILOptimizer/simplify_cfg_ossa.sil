@@ -204,7 +204,6 @@ bb3(%6 : $Builtin.Int32):
 }
 
 enum BoolLike { case true_, false_ }
-// BoolLike with a payload of state on the true_ side.
 
 // func testThread(a : BoolLike) -> Int32 {
 //   if a { return 42 } else { return 17 } }
@@ -568,7 +567,6 @@ class C {
   final var value: Int32
   init(v: Int32)
 }
-
 
 enum A {
   case B, C, D
@@ -1038,17 +1036,33 @@ bb1b:
   br bb1
 
 bb1:
-  %i1 = integer_literal $Builtin.Int1, -1
-  %i2 = builtin "xor_Int1"(%0 : $Builtin.Int1, %i1 : $Builtin.Int1) : $Builtin.Int1
-  cond_fail %i2 : $Builtin.Int1
-  unreachable
+  %3 = tuple ()
+  return %3 : $()
 
-bb2:
-  // Make bb1 not dominated from bb0 to prevent that dominator based
-  // simplification does the same thing.
-  %55 = function_ref @external_f : $@convention(thin) () -> ()
-  apply %55() : $@convention(thin) () -> ()
-  cond_br %1, bb1a, bb3
+bb2(%5 : @guaranteed $Base):
+// CHECK: [[SUCCESS]]([[SUCCESSARG:%.*]] : @guaranteed $Base)
+// CHECK: [[METHOD2:%.*]] = class_method %0 : $Base, #Base.inner : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+  %7 = class_method %0 : $Base, #Base.inner : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+// CHECK-NOT: checked_cast_br [exact] %0 : $Base to Derived
+// CHECK: apply [[METHOD2]]([[SUCCESSARG]])
+// Check that checked_cast_br [exact] was replaced by a branch to the failure BB of the checked_cast_br.
+// This is because bb2 is reached via the success branch of the checked_cast_br [exact] from bb0.
+// It means that the exact dynamic type of %0 is $Base. Thus it cannot be $Derived.
+// CHECK: br bb1
+  checked_cast_br [exact] %5 : $Base to Derived, bb3, bb5
+
+bb3(%9 : @guaranteed $Derived):
+  %10 = function_ref @_TFC3ccb4Base5innerfS0_FT_T_ : $@convention(method) (@guaranteed Base) -> ()
+  %11 = apply %10(%0) : $@convention(method) (@guaranteed Base) -> ()
+  br bb4
+
+bb4:
+  %13 = tuple ()
+  br bb6(%13 : $())
+
+bb5(%9o : @guaranteed $Base):
+  %15 = apply %7(%9o) : $@convention(method) (@guaranteed Base) -> ()
+  br bb4
 
 bb1a:
   br bb1
@@ -1058,39 +1072,69 @@ bb3:
   return %2 : $()
 }
 
-// CHECK-LABEL: sil [ossa] @remove_cond_fail_same_cond_in_false2
-// CHECK: bb0([[COND:%[0-9]*]]
-// CHECK-NOT: bb
-// CHECK: cond_fail [[COND]]
-// CHECK: bb1:
-// CHECK: return
-sil [ossa] @remove_cond_fail_same_cond_in_false2 : $@convention(thin)(Builtin.Int1, Builtin.Int1) -> () {
-bb0(%0 : $Builtin.Int1, %1 : $Builtin.Int1):
-  %i1 = integer_literal $Builtin.Int1, -1
-  %i2 = builtin "xor_Int1"(%0 : $Builtin.Int1, %i1 : $Builtin.Int1) : $Builtin.Int1
-  cond_br %i2, bb2, bb1a
+// CHECK-LABEL: sil [ossa] @failing_checked_cast_br_owned
+sil [ossa] @failing_checked_cast_br_owned : $@convention(method) (@guaranteed Base) -> () {
+// CHECK: [[COPY:%.*]] = copy_value %0
+// CHECK: [[METHOD:%.*]] = class_method %0 : $Base, #Base.middle : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+// CHECK: checked_cast_br [exact] [[COPY]] : $Base to Base, [[SUCCESS:bb[0-9]+]], [[FAIL:bb[0-9]+]]
+bb0(%0 : @guaranteed $Base):
+  %copy = copy_value %0 : $Base
+  %1 = class_method %0 : $Base, #Base.middle : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+  checked_cast_br [exact] %copy : $Base to Base, bb2, bb7
 
-bb1a:
-  br bb1
-
+// CHECK-LABEL: bb1
 bb1:
-  cond_fail %0 : $Builtin.Int1
-  unreachable
+  %3 = tuple ()
+  return %3 : $()
 
-bb2:
-  // Make bb1 not dominated from bb0 to prevent that dominator based
-  // simplification does the same thing.
-  %55 = function_ref @external_f : $@convention(thin) () -> ()
-  apply %55() : $@convention(thin) () -> ()
-  cond_br %1, bb1b, bb3
+// CHECK: [[SUCCESS]]([[SUCCESSARG:%.*]] : @owned $Base)
+// CHECK: [[METHOD2:%.*]] = class_method %0 : $Base, #Base.inner : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+// CHECK-NOT: checked_cast_br [exact] %0 : $Base to Derived
+// CHECK: apply [[METHOD2]]([[SUCCESSARG]])
+// Check that checked_cast_br [exact] was replaced by a branch to the failure BB of the checked_cast_br.
+// This is because bb2 is reached via the success branch of the checked_cast_br [exact] from bb0.
+// It means that the exact dynamic type of %0 is $Base. Thus it cannot be $Derived.
+// CHECK: br bb1
+bb2(%5 : @owned $Base):
+  %7 = class_method %0 : $Base, #Base.inner : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+  checked_cast_br [exact] %5 : $Base to Derived, bb3, bb5
 
-bb1b:
+bb3(%9 : @owned $Derived):
+  %upcast = upcast %9 : $Derived to $Base
+  %10 = function_ref @_TFC3ccb4Base5innerfS0_FT_T_ : $@convention(method) (@guaranteed Base) -> ()
+  %11 = apply %10(%upcast) : $@convention(method) (@guaranteed Base) -> ()
+  destroy_value %upcast : $Base
+  br bb4
+
+bb4:
+  %13 = tuple ()
+  br bb6(%13 : $())
+
+bb5(%9o : @owned $Base):
+  %15 = apply %7(%9o) : $@convention(method) (@guaranteed Base) -> ()
+  destroy_value %9o : $Base
+  br bb4
+
+bb6(%17 : $()):
   br bb1
 
-bb3:
-  %2 = tuple()
-  return %2 : $()
+bb7(%anotherDefaultPayload : @owned $Base):
+  %19 = apply %1(%0) : $@convention(method) (@guaranteed Base) -> ()
+  destroy_value %anotherDefaultPayload : $Base
+  br bb1
 }
+
+sil [ossa] @unknown2 : $@convention(thin) () -> ()
+
+// CHECK-LABEL: no_checked_cast_br_threading_with_alloc_ref_stack
+// CHECK: checked_cast_br
+// CHECK: apply
+// CHECK: apply
+// CHECK: checked_cast_br
+// CHECK: apply
+// CHECK: apply
+//!!! what happened to this test???
+
 
 // CHECK-LABEL: sil [ossa] @dont_remove_cond_fail_same_cond_in_false
 // CHECK: bb0([[COND:%[0-9]*]]
@@ -1807,4 +1851,65 @@ bb5:
 
 bb6(%14 : $FakeBool):
   return %14 : $FakeBool
+}
+
+// CHECK-LABEL: sil [ossa] @redundant_checked_cast_br_owned
+sil [ossa] @redundant_checked_cast_br_owned : $@convention(method) (@guaranteed Base) -> () {
+// CHECK: [[COPY:%.*]] = copy_value %0
+// CHECK: [[METHOD:%.*]] = class_method %0 : $Base, #Base.middle : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+// CHECK: checked_cast_br [exact] [[COPY]] : $Base to Base, [[SUCCESS:bb[0-9]+]], [[FAIL:bb[0-9]+]]
+bb0(%0 : @guaranteed $Base):
+  %copy = copy_value %0 : $Base
+  %1 = class_method %0 : $Base, #Base.middle : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+  checked_cast_br [exact] %copy : $Base to Base, bb2, bb7
+
+// CHECK: bb1
+bb1:
+  %3 = tuple ()
+  return %3 : $()
+
+// CHECK: [[SUCCESS]]([[SUCCESSARG:%.*]] : @owned $Base)
+// CHECK-NOT: checked_cast_br
+// CHECK: [[INNER:%.*]] = function_ref @_TFC3ccb4Base5innerfS0_FT_T_ : $@convention(method) (@guaranteed Base) -> ()
+// CHECK: apply [[INNER]]([[SUCCESSARG]])
+// CHECK: br bb1
+bb2(%5 : @owned $Base):
+  %7 = class_method %0 : $Base, #Base.inner : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+  checked_cast_br [exact] %5 : $Base to Base, bb3, bb5
+
+// CHECK: [[FAIL]]([[FAILARG:%.*]] : @owned $Base)
+// CHECK-NOT: function-ref
+// CHECK: apply [[METHOD]]([[FAILARG]])
+bb3(%9 : @owned $Base):
+  %10 = function_ref @_TFC3ccb4Base5innerfS0_FT_T_ : $@convention(method) (@guaranteed Base) -> ()
+  %11 = apply %10(%9) : $@convention(method) (@guaranteed Base) -> ()
+  destroy_value %9 : $Base
+  br bb4
+
+bb4:
+  %13 = tuple ()
+  br bb6(%13 : $())
+
+bb5(%defaultBB2 : @owned $Base):
+  %15 = apply %7(%defaultBB2) : $@convention(method) (@guaranteed Base) -> ()
+  destroy_value %defaultBB2 : $Base
+  br bb4
+
+bb6(%17 : $()):
+  br bb1
+
+bb7(%defaultBB0 : @owned $Base):
+  %19 = apply %1(%defaultBB0) : $@convention(method) (@guaranteed Base) -> ()
+  destroy_value %defaultBB0 : $Base
+  br bb1
+}
+
+// CHECK-LABEL: sil [ossa] @not_redundant_checked_cast_br : $@convention(method) (@guaranteed Base) -> () {
+sil [ossa] @not_redundant_checked_cast_br : $@convention(method) (@guaranteed Base) -> () {
+bb0(%0 : @guaranteed $Base):
+// CHECK: [[METHOD:%.*]] = class_method %0 : $Base, #Base.middle : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+  %1 = class_method %0 : $Base, #Base.middle : (Base) -> () -> (), $@convention(method) (@guaranteed Base) -> ()
+// CHECK: checked_cast_br [exact] %0 : $Base to Base, [[SUCCESS:bb[0-9]+]], [[FAIL:bb[0-9]+]]
+  checked_cast_br [exact] %0 : $Base to Base, bb2, bb7
+  //!!! incomplete test ??
 }
