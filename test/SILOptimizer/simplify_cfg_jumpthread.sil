@@ -1,0 +1,239 @@
+// RUN: %target-sil-opt -enable-sil-verify-all %s -simplify-cfg | %FileCheck %s
+
+// Test tryJumpThreading with OSSA. This does not require
+// -jumpthread-simplify-cfg, which is only for dominator-based
+// jump-threading.
+
+// Includes the OSSA form of tests from simplify_cfg_simple.sil,
+// simplify_cfg_opaque.sil, and simplify_cfg_address_phi.sil.
+//
+// ...along with new OSSA test cases.
+
+sil_stage canonical
+
+import Builtin
+
+protocol P {}
+
+// Test that SimplifyCFG::simplifyBlocks, tryJumpThreading does not
+// perform unbounded loop peeling.
+//
+// rdar://73357726 ([SR-14068]: Compiling with optimisation runs indefinitely for grpc-swift)
+// CHECK-LABEL: sil @testInfinitePeeling : $@convention(method) (Builtin.Int64, Enum) -> () {
+//
+// There is only one switch_enum blocks, and it is no longer in a loop.
+// CHECK: bb0(%0 : $Builtin.Int64, %1 : $Enum):
+// CHECK:   switch_enum %1 : $Enum, case #Enum.one!enumelt: bb3, case #Enum.two!enumelt: bb4
+// CHECK: bb1:
+// CHECK:   br bb8
+// CHECK: bb2:
+// CHECK:   br bb5(%{{.*}} : $Enum)
+//
+// This is the original cond_br block
+// CHECK: bb3:
+// CHECK:   cond_br %{{.*}}, bb2, bb1
+// CHECK: bb4:
+// CHECK:   br bb5(%1 : $Enum)
+//
+// This is the cond_br block after jump-threading.
+// CHECK: bb5(%{{.*}} : $Enum):
+// CHECK:   cond_br %{{.*}}, bb6, bb7
+// CHECK: bb6:
+// CHECK:   br bb5(%{{.*}} : $Enum)
+// CHECK: bb7:
+// CHECK:   br bb8
+// CHECK: bb8:
+// CHECK:   return %19 : $()
+// CHECK-LABEL: } // end sil function 'testInfinitePeeling'
+sil @testInfinitePeeling : $@convention(method) (Builtin.Int64, Enum) -> () {
+bb0(%0 : $Builtin.Int64, %1 : $Enum):
+  %2 = integer_literal $Builtin.Int64, 99999999
+  br bb1(%0 : $Builtin.Int64, %1 : $Enum)
+
+bb1(%4 : $Builtin.Int64, %5 : $Enum):
+  switch_enum %5 : $Enum, case #Enum.one!enumelt: bb4, default bb5
+
+bb2(%7 : $Builtin.Int64, %8 : $Enum):
+  %9 = builtin "cmp_slt_Int64"(%2 : $Builtin.Int64, %7 : $Builtin.Int64) : $Builtin.Int1
+  cond_br %9, bb3, bb6
+
+bb3:
+  br bb1(%7 : $Builtin.Int64, %8 : $Enum)
+
+bb4:
+  %12 = integer_literal $Builtin.Int64, 1
+  %13 = integer_literal $Builtin.Int1, -1
+  %14 = builtin "sadd_with_overflow_Int64"(%4 : $Builtin.Int64, %12 : $Builtin.Int64, %13 : $Builtin.Int1) : $(Builtin.Int64, Builtin.Int1)
+  %15 = tuple_extract %14 : $(Builtin.Int64, Builtin.Int1), 0
+  %16 = enum $Enum, #Enum.two!enumelt
+  br bb2(%15 : $Builtin.Int64, %16 : $Enum)
+
+bb5:
+  br bb2(%2 : $Builtin.Int64, %5 : $Enum)
+
+bb6:
+  %19 = tuple ()
+  return %19 : $()
+}
+
+// !!! do these need to be moved to domjumpthread?
+
+// Test jump threading into a destination block terminated by checked_cast_value_br.
+//
+// CHECK-LABEL: sil @testJumpThread : $@convention(thin) (Any, Any) -> () {
+// CHECK: bb0(%0 : $Any, %1 : $Any):
+// CHECK:   cond_br undef, bb1, bb2
+// CHECK: bb1:
+// CHECK:   retain_value %0 : $Any
+// CHECK:   release_value %0 : $Any
+// CHECK:   checked_cast_value_br Any in %0 : $Any to P
+// CHECK: bb2:
+// CHECK:   checked_cast_value_br Any in %1 : $Any to P
+// CHECK-LABEL: } // end sil function 'testJumpThread'
+sil @testJumpThread : $@convention(thin) (Any, Any) -> () {
+bb0(%0 : $Any, %1 : $Any):
+  cond_br undef, bb1, bb2
+bb1:
+  retain_value %0 : $Any // force jump-threading
+  br bb6(%0 : $Any)
+bb2:
+  br bb6(%1 : $Any)
+bb6(%any : $Any):
+  release_value %any : $Any // force jump-threading
+  checked_cast_value_br Any in %any : $Any to P, bb7, bb8
+bb7(%p : $P):
+  br bb9
+bb8:
+  br bb9
+bb9:
+  %999 = tuple ()
+  return %999 : $()
+}
+
+
+class C {
+  @_hasStorage @_hasInitialValue var field: Int { get set }
+  @objc deinit
+    init()
+}
+
+sil @getC : $@convention(thin) () -> C
+
+// Test that jump threading sinks a ref_element_addr, generating a
+// non-address phi for its operand.
+//
+// The retain on separate paths followed by a merged release, and
+// target block with a conditional branch are necessary just to get
+// jump threading to kick in.
+//
+// CHECK-LABEL: sil @testJumpThreadRefEltLoop : $@convention(thin) () -> () {
+// CHECK: bb0
+// CHECK:   function_ref @getC : $@convention(thin) () -> C
+// CHECK:   cond_br undef, bb1, bb2
+// CHECK: bb1:
+// CHECK:   [[C1:%.*]] = apply %0() : $@convention(thin) () -> C
+// CHECK:   strong_retain [[C1]] : $C
+// CHECK:   strong_release [[C1]] : $C
+// CHECK:   br bb3([[C1]] : $C)
+// CHECK: bb2:
+// CHECK:   [[C2:%.*]] = apply %0() : $@convention(thin) () -> C
+// CHECK:   strong_retain [[C2]] : $C
+// CHECK:   strong_release [[C2]] : $C
+// CHECK:   br bb3([[C2]] : $C)
+// CHECK: bb3([[PHI:%.*]] : $C):
+// CHECK:   [[ADR:%.*]] = ref_element_addr [[PHI]] : $C, #C.field
+// CHECK:   begin_access [read] [dynamic] [[ADR]] : $*Int
+// CHECK:   load
+// CHECK:   end_access
+// CHECK-LABEL: } // end sil function 'testJumpThreadRefEltLoop'
+sil @testJumpThreadRefEltLoop : $@convention(thin) () -> () {
+bb0:
+  %f = function_ref @getC : $@convention(thin) () -> C
+  cond_br undef, bb1, bb2
+
+bb1:
+  %c1 = apply %f() : $@convention(thin) ()->C
+  strong_retain %c1 : $C
+  br bb3(%c1 : $C)
+
+bb2:
+  %c2 = apply %f() : $@convention(thin) ()->C
+  strong_retain %c2 : $C
+  br bb3(%c2 : $C)
+
+bb3(%arg : $C):
+  strong_release %arg : $C
+  %18 = ref_element_addr %arg : $C, #C.field
+  br bb4
+
+bb4:
+  %19 = begin_access [read] [dynamic] %18 : $*Int
+  %20 = load %19 : $*Int
+  end_access %19 : $*Int
+  cond_br undef, bb4, bb5
+
+bb5:
+  %z = tuple ()
+  return %z : $()
+}
+
+// Test that jump threading sinks a
+// ref_tail_addr->index_addr->struct_element_addr chain and generates
+// a phi for the index_addr's index operand.
+//
+// The retain on separate paths followed by a merged release, and
+// target block with a conditional branch are necessary just to get
+// jump threading to kick in.
+//
+// CHECK-LABEL: sil @testJumpThreadIndex : $@convention(thin) (__ContiguousArrayStorageBase, Builtin.Int64) -> Builtin.Int32 {
+// CHECK: bb0(%0 : $__ContiguousArrayStorageBase, %1 : $Builtin.Int64):
+// CHECK:   cond_br undef, bb2, bb1
+// CHECK: bb1:
+// CHECK:   apply
+// CHECK:   strong_retain
+// CHECK:   strong_release
+// CHECK:   [[IDX2:%.*]] = builtin "truncOrBitCast_Int64_Word"(%1 : $Builtin.Int64) : $Builtin.Word
+// CHECK:   br bb3([[IDX2]] : $Builtin.Word)
+// CHECK: bb2:
+// CHECK:   apply
+// CHECK:   strong_retain
+// CHECK:   strong_release
+// CHECK:   [[IDX1:%.*]] = builtin "truncOrBitCast_Int64_Word"(%1 : $Builtin.Int64) : $Builtin.Word
+// CHECK:   br bb3([[IDX1]] : $Builtin.Word)
+// CHECK: bb3([[PHI:%.*]] : $Builtin.Word):
+// CHECK:   [[TAIL:%.*]] = ref_tail_addr %0 : $__ContiguousArrayStorageBase, $Int32
+// CHECK:   [[ELT:%.*]] = index_addr [[TAIL]] : $*Int32, %14 : $Builtin.Word
+// CHECK:   [[ADR:%.*]] = struct_element_addr [[ELT]] : $*Int32, #Int32._value
+// CHECK:   load [[ADR]] : $*Builtin.Int32
+// CHECK:   cond_br undef, bb4, bb5
+// CHECK-LABEL: } // end sil function 'testJumpThreadIndex'
+sil @testJumpThreadIndex : $@convention(thin) (__ContiguousArrayStorageBase, Builtin.Int64) -> Builtin.Int32 {
+bb0(%0 : $__ContiguousArrayStorageBase, %1 : $Builtin.Int64):
+  %f = function_ref @getC : $@convention(thin) () -> C
+  cond_br undef, bb1, bb2
+
+bb1:
+  %c1 = apply %f() : $@convention(thin) ()->C
+  strong_retain %c1 : $C
+  br bb3(%c1 : $C)
+
+bb2:
+  %c2 = apply %f() : $@convention(thin) ()->C
+  strong_retain %c2 : $C
+  br bb3(%c2 : $C)
+
+bb3(%arg : $C):
+  strong_release %arg : $C
+  %tail = ref_tail_addr %0 : $__ContiguousArrayStorageBase, $Int32
+  %idx = builtin "truncOrBitCast_Int64_Word"(%1 : $Builtin.Int64) : $Builtin.Word
+  %elt = index_addr %tail : $*Int32, %idx : $Builtin.Word
+  %adr = struct_element_addr %elt : $*Int32, #Int32._value
+  br bb4
+
+bb4:
+  %val = load %adr : $*Builtin.Int32
+  cond_br undef, bb4, bb5
+
+bb5:
+  return %val : $Builtin.Int32
+}

@@ -1,0 +1,70 @@
+// RUN: %target-sil-opt -enable-sil-verify-all %s -jumpthread-simplify-cfg | %FileCheck %s
+
+// Test dominator-based jump-threading with OSSA. This requires
+// -jumpthread-simplify-cfg to enable dominator-based
+// jump-threading.
+
+// Include the OSSA form of a test from simplify_cfg_opaque.sil
+//
+// ...along with new OSSA test cases.
+
+// Test that jump threading sinks a
+// ref_tail_addr->index_addr->struct_element_addr chain and generates
+// a phi for the index_addr's index operand.
+//
+// The retain on separate paths followed by a merged release, and
+// target block with a conditional branch are necessary just to get
+// jump threading to kick in.
+//
+// CHECK-LABEL: sil @testJumpThreadIndex : $@convention(thin) (__ContiguousArrayStorageBase, Builtin.Int64) -> Builtin.Int32 {
+// CHECK: bb0(%0 : $__ContiguousArrayStorageBase, %1 : $Builtin.Int64):
+// CHECK:   cond_br undef, bb2, bb1
+// CHECK: bb1:
+// CHECK:   apply
+// CHECK:   strong_retain
+// CHECK:   strong_release
+// CHECK:   [[IDX2:%.*]] = builtin "truncOrBitCast_Int64_Word"(%1 : $Builtin.Int64) : $Builtin.Word
+// CHECK:   br bb3([[IDX2]] : $Builtin.Word)
+// CHECK: bb2:
+// CHECK:   apply
+// CHECK:   strong_retain
+// CHECK:   strong_release
+// CHECK:   [[IDX1:%.*]] = builtin "truncOrBitCast_Int64_Word"(%1 : $Builtin.Int64) : $Builtin.Word
+// CHECK:   br bb3([[IDX1]] : $Builtin.Word)
+// CHECK: bb3([[PHI:%.*]] : $Builtin.Word):
+// CHECK:   [[TAIL:%.*]] = ref_tail_addr %0 : $__ContiguousArrayStorageBase, $Int32
+// CHECK:   [[ELT:%.*]] = index_addr [[TAIL]] : $*Int32, %14 : $Builtin.Word
+// CHECK:   [[ADR:%.*]] = struct_element_addr [[ELT]] : $*Int32, #Int32._value
+// CHECK:   load [[ADR]] : $*Builtin.Int32
+// CHECK:   cond_br undef, bb4, bb5
+// CHECK-LABEL: } // end sil function 'testJumpThreadIndex'
+sil @testJumpThreadIndex : $@convention(thin) (__ContiguousArrayStorageBase, Builtin.Int64) -> Builtin.Int32 {
+bb0(%0 : $__ContiguousArrayStorageBase, %1 : $Builtin.Int64):
+  %f = function_ref @getC : $@convention(thin) () -> C
+  cond_br undef, bb1, bb2
+
+bb1:
+  %c1 = apply %f() : $@convention(thin) ()->C
+  strong_retain %c1 : $C
+  br bb3(%c1 : $C)
+
+bb2:
+  %c2 = apply %f() : $@convention(thin) ()->C
+  strong_retain %c2 : $C
+  br bb3(%c2 : $C)
+
+bb3(%arg : $C):
+  strong_release %arg : $C
+  %tail = ref_tail_addr %0 : $__ContiguousArrayStorageBase, $Int32
+  %idx = builtin "truncOrBitCast_Int64_Word"(%1 : $Builtin.Int64) : $Builtin.Word
+  %elt = index_addr %tail : $*Int32, %idx : $Builtin.Word
+  %adr = struct_element_addr %elt : $*Int32, #Int32._value
+  br bb4
+
+bb4:
+  %val = load %adr : $*Builtin.Int32
+  cond_br undef, bb4, bb5
+
+bb5:
+  return %val : $Builtin.Int32
+}
