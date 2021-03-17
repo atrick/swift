@@ -50,8 +50,6 @@ class CheckedCastBrJumpThreading {
   // need to be recomputed each time tryCheckedCastBrJumpThreading is called.
   DeadEndBlocks *deBlocks;
 
-  JointPostDominanceSetComputer jointPostDomComputer;
-
   InstModCallbacks callbacks;
 
   // Shared data structures across OwnershipRAUWHelper instances.
@@ -140,8 +138,7 @@ public:
   CheckedCastBrJumpThreading(SILFunction *Fn, DominanceInfo *DT,
                              DeadEndBlocks *deBlocks,
                              SmallVectorImpl<SILBasicBlock *> &BlocksForWorklist)
-      : Fn(Fn), DT(DT), deBlocks(deBlocks), jointPostDomComputer(*deBlocks),
-        rauwContext(callbacks, *deBlocks, jointPostDomComputer),
+      : Fn(Fn), DT(DT), deBlocks(deBlocks), rauwContext(callbacks, *deBlocks),
         BlocksForWorklist(BlocksForWorklist), BlocksToEdit(Fn),
         BlocksToClone(Fn) { }
 
@@ -271,12 +268,16 @@ void CheckedCastBrJumpThreading::Edit::modifyCFGForFailurePreds(
 
   assert(!Cloner.wasCloned());
   Cloner.cloneBlock();
-  Cloner.updateSSAAfterCloning();
   SILBasicBlock *TargetFailureBB = Cloner.getNewBB();
   auto *clonedCCBI =
       cast<CheckedCastBranchInst>(TargetFailureBB->getTerminator());
   SILBuilderWithScope Builder(clonedCCBI);
-  // This BB copy branches to the FailureBB.
+  // This cloned block branches to the FailureBB.
+  // The checked_cast_br uses are replaced with its operand,
+  // and the block argument for its result is deleted. Since the checked_cast's
+  // uses now use its forwarded operand, they are still in valid OSSA form, so
+  // this can be done before updateOSSAAfterCloning, which doesn't need to know
+  // about the erased checked_cast.
   auto *failureBB = clonedCCBI->getFailureBB();
   Builder.createBranch(clonedCCBI->getLoc(), failureBB);
   if (CCBBlock->getParent()->hasOwnership()) {
@@ -293,6 +294,7 @@ void CheckedCastBrJumpThreading::Edit::modifyCFGForFailurePreds(
     replaceBranchTarget(TI, CCBBlock, TargetFailureBB,
     /*PreserveArgs=*/true);
   }
+  Cloner.updateOSSAAfterCloning();
 }
 
 /// Create a copy of the BB or reuse BB as a landing basic block for all
@@ -334,23 +336,28 @@ void CheckedCastBrJumpThreading::Edit::modifyCFGForSuccessPreds(
         replaceBranchTarget(TI, CCBBlock, clonedCCBBlock,
                             /*PreserveArgs=*/true);
       }
-      Cloner.updateSSAAfterCloning();
       // Remove the unreachable checked_cast_br target.
       auto *clonedCCBI =
           cast<CheckedCastBranchInst>(clonedCCBBlock->getTerminator());
       auto *successBB = clonedCCBI->getSuccessBB();
-      // This BB copy branches to SuccessBB.
-      // Take argument value from the dominating BB.
+      // This cloned block branches to the successBB.
+      // The checked_cast_br uses are replaced with SuccessArg.
       if (!CCBBlock->getParent()->hasOwnership()) {
         SILBuilderWithScope Builder(clonedCCBI);
         Builder.createBranch(clonedCCBI->getLoc(), successBB, {SuccessArg});
         clonedCCBI->eraseFromParent();
+        Cloner.updateOSSAAfterCloning();
       } else {
         // Remove all uses from the failure path so RAUW can erase the
         // terminator after replacing the successor argument.
         auto *failureBB = clonedCCBI->getFailureBB();
         assert(failureBB->getNumArguments() == 1 && "expecting term result");
         failureBB->getArgument(0)->replaceAllUsesWithUndef();
+
+        // Create nested borrow scopes for new phis either created for the
+        // checked_cast's results or during SSA update. This puts the SIL in
+        // valid OSSA form before calling OwnershipRAUWHelper.
+        Cloner.updateOSSAAfterCloning();
 
         auto *clonedSuccessArg = successBB->getArgument(0);
         OwnershipRAUWHelper rauwUtil(rauwContext, clonedSuccessArg, SuccessArg);
