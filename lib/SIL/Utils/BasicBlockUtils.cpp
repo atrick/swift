@@ -519,3 +519,32 @@ void swift::findJointPostDominatingSet(
     }
   }
 }
+
+//===----------------------------------------------------------------------===//
+//                            checkBlockDominance
+//===----------------------------------------------------------------------===//
+
+#ifndef NDEBUG
+bool swift::checkReachingBlockDominates(SILBasicBlock *sourceBlock,
+                                        SILBasicBlock *destBlock) {
+  SILBasicBlock *entryBlock = sourceBlock->getParent()->getEntryBlock();
+  BasicBlockSet visitedBlocks(sourceBlock->getParent());
+  SmallVector<SILBasicBlock *, 32> workList = {destBlock};
+  bool reaches = false;
+  while (!workList.empty()) {
+    SILBasicBlock *block = workList.pop_back_val();
+    if (block == sourceBlock) {
+      reaches = true;
+      continue;
+    }
+    if (block == entryBlock) {
+      return false; // does not dominate
+    }
+    for (auto *predBlock : block->getPredecessorBlocks()) {
+      if (!visitedBlocks.contains(predBlock))
+        workList.push_back(predBlock);
+    }
+  }
+  return reaches;
+}
+#endif

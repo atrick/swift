@@ -58,6 +58,12 @@ struct OwnershipFixupContext {
   InstModCallbacks &callbacks;
   DeadEndBlocks &deBlocks;
 
+  // Cache the use-points for the lifetime of an inner guaranteed value (which
+  // does not introduce a borrow scope) after checking validity. These will be
+  // used again to extend the lifetime of the replacement value.
+  SmallVector<Operand *, 8> guaranteedUsePoints;
+
+  // FIXME: replace these two vectors by BorrowedLifetimeExtender
   SmallVector<Operand *, 8> transitiveBorrowedUses;
   SmallVector<PhiOperand, 8> recursiveReborrows;
 
@@ -125,6 +131,11 @@ public:
   ///
   /// \p oldValue may be either a SingleValueInstruction or a terminator result.
   ///
+  /// Precondition: If \p oldValue is a BorrowedValue that introduces a local
+  /// borrow scope, then \p newValue must either be defined in the same block as
+  /// \p oldValue, or it must dominate \p oldValue (rather than merely
+  /// dominating its uses).
+  ///
   /// DISCUSSION: We do not check that the types line up here so that we can
   /// allow for our users to transform our new value in ways that preserve
   /// ownership at \p oldValue before we perform the actual RAUW. If \p newValue
@@ -159,6 +170,9 @@ private:
 /// A utility composed ontop of OwnershipFixupContext that knows how to replace
 /// a single use of a value with another value with a different ownership. We
 /// allow for the values to have different types.
+///
+/// Precondition: if \p use ends a borrow scope, then \p newValue dominates the
+/// BorrowedValue that begins the scope.
 ///
 /// NOTE: When not in OSSA, this just performs a normal set use, so this code is
 /// safe to use with all code.
