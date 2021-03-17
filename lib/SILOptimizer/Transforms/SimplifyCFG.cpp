@@ -43,6 +43,11 @@
 #include "llvm/Support/Debug.h"
 using namespace swift;
 
+llvm::cl::opt<bool> IsInfiniteJumpThreadingBudget(
+    "sil-infinite-jump-threading-budget",
+    llvm::cl::desc(
+        "Use infinite budget for jump threading. Useful for testing purposes"));
+
 STATISTIC(NumBlocksDeleted, "Number of unreachable blocks removed");
 STATISTIC(NumBlocksMerged, "Number of blocks merged together");
 STATISTIC(NumJumpThreads, "Number of jumps threaded");
@@ -1050,7 +1055,7 @@ bool SimplifyCFG::tryJumpThreading(BranchInst *BI) {
   // major second order simplifications.  Here we only do it if there are
   // "constant" arguments to the branch or if we know how to fold something
   // given the duplication.
-  int ThreadingBudget = 0;
+  int ThreadingBudget = IsInfiniteJumpThreadingBudget ? INT_MAX : 0;
 
   for (unsigned i : indices(BI->getArgs())) {
     SILValue Arg = BI->getArg(i);
