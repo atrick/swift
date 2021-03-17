@@ -21,7 +21,6 @@
 #include "swift/SIL/SILModule.h"
 #include "swift/SIL/SILUndef.h"
 #include "swift/SIL/TerminatorUtils.h"
-#include "swift/SIL/BasicBlockBits.h"
 #include "swift/SILOptimizer/Analysis/DominanceAnalysis.h"
 #include "swift/SILOptimizer/Analysis/ProgramTerminationAnalysis.h"
 #include "swift/SILOptimizer/Analysis/SimplifyInstruction.h"
@@ -51,6 +50,10 @@ STATISTIC(NumConstantFolded, "Number of terminators constant folded");
 STATISTIC(NumDeadArguments, "Number of unused arguments removed");
 STATISTIC(NumSROAArguments, "Number of aggregate argument levels split by "
                             "SROA");
+
+static llvm::cl::opt<bool> ForceRunOnOwnership(
+    "sil-simplify-cfg-force-run-on-ownership", llvm::cl::init(true),
+    llvm::cl::desc("Run simplify cfg on ownership code instead of early exiting. For testing purporses!"));
 
 //===----------------------------------------------------------------------===//
 //                             CFG Simplification
@@ -3970,6 +3973,8 @@ bool SimplifyCFG::simplifyArgument(SILBasicBlock *BB, unsigned i) {
   return true;
 }
 
+// OWNERSHIP NOTE: This is always safe for guaranteed and owned arguments since
+// in both cases the phi will consume its input.
 static void tryToReplaceArgWithIncomingValue(SILBasicBlock *BB, unsigned i,
                                              DominanceInfo *DT) {
   auto *A = BB->getArgument(i);
