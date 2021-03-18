@@ -334,7 +334,8 @@ SILLinkage getSpecializedLinkage(SILFunction *f, SILLinkage linkage);
 /// function \p Fn.
 bool tryCheckedCastBrJumpThreading(
     SILFunction *fn, DominanceInfo *dt,
-    SmallVectorImpl<SILBasicBlock *> &blocksForWorklist);
+    SmallVectorImpl<SILBasicBlock *> &blocksForWorklist,
+    bool EnableOSSARewriteTerminator);
 
 /// A structure containing callbacks that are called when an instruction is
 /// removed or added.
