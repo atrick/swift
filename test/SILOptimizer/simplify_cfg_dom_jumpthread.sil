@@ -1,11 +1,12 @@
 // RUN: %target-sil-opt -enable-sil-verify-all %s -jumpthread-simplify-cfg | %FileCheck %s
 
+// FIXME: Add -enable-ossa-jumpthread-simplifycfg to stage this in
+
 // Test dominator-based jump-threading with OSSA. This requires
 // -jumpthread-simplify-cfg to enable dominator-based
 // jump-threading.
 
-// Include the OSSA form of a test from simplify_cfg_opaque.sil
-//
+// Includes an OSSA form of a test from simplify_cfg_opaque.sil
 // ...along with new OSSA test cases.
 
 // Test that jump threading sinks a

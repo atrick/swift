@@ -1,4 +1,6 @@
-// RUN: %target-sil-opt -enable-objc-interop -enforce-exclusivity=none -enable-sil-verify-all %s -jumpthread-simplify-cfg | %FileCheck %s
+// RUN: %target-sil-opt -enable-sil-verify-all %s -simplify-cfg | %FileCheck %s
+//
+// Use -enable-ossa-simplifycfg to test
 //
 // These tests case are converted to OSSA form, but aren't yet
 // optimized in OSSA mode. Move them to simplify_cfg_ossa.sil when
