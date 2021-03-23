@@ -42,6 +42,13 @@ class CheckedCastBrJumpThreading {
   // Dominator information to be used.
   DominanceInfo *DT;
 
+  // DeadEndBlocks is used by OwnershipRAUW and incrementally updated within
+  // CheckedCastBrJumpThreading.
+  //
+  // TODO: incrementally update dead-end blocks during SimplifyCFG so it doesn't
+  // need to be recomputed each time tryCheckedCastBrJumpThreading is called.
+  DeadEndBlocks *deBlocks;
+
   // Enable non-trivial terminator rewriting in OSSA.
   bool EnableOSSARewriteTerminator;
   
@@ -123,7 +130,7 @@ class CheckedCastBrJumpThreading {
 
 public:
   CheckedCastBrJumpThreading(
-    SILFunction *Fn, DominanceInfo *DT,
+    SILFunction *Fn, DominanceInfo *DT, DeadEndBlocks *deBlocks,
     SmallVectorImpl<SILBasicBlock *> &BlocksForWorklist,
     bool EnableOSSARewriteTerminator)
     : Fn(Fn), DT(DT), EnableOSSARewriteTerminator(EnableOSSARewriteTerminator),
@@ -673,7 +680,7 @@ void CheckedCastBrJumpThreading::optimizeFunction() {
     Fn->verifyCriticalEdges();
 
   for (Edit *edit : Edits) {
-    BasicBlockCloner Cloner(edit->CCBBlock);
+    BasicBlockCloner Cloner(edit->CCBBlock, deBlocks);
     if (!Cloner.canCloneBlock())
       continue;
 
@@ -698,7 +705,7 @@ void CheckedCastBrJumpThreading::optimizeFunction() {
 namespace swift {
 
 bool tryCheckedCastBrJumpThreading(
-  SILFunction *Fn, DominanceInfo *DT,
+  SILFunction *Fn, DominanceInfo *DT, DeadEndBlocks *deBlocks,
   SmallVectorImpl<SILBasicBlock *> &BlocksForWorklist,
   bool EnableOSSARewriteTerminator) {
 
