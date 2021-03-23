@@ -590,6 +590,8 @@ static bool tryDominatorBasedSimplifications(
         if (stripExpectIntrinsic(Op.get()) == DominatingCondition) {
           if (!EdgeValue)
             EdgeValue = createValueForEdge(UserInst, DominatingTerminator, Idx);
+          LLVM_DEBUG(llvm::dbgs() << "replace dominated operand\n  in "
+                     << *UserInst << "  with " << EdgeValue);
           Op.set(EdgeValue);
           Changed = true;
         }
