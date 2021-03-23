@@ -91,6 +91,12 @@ class SimplifyCFG {
   SILFunction &Fn;
   SILPassManager *PM;
 
+  // DeadEndBlocks remains conservatively valid across updates that rewrite
+  // branches and remove edges. Any transformation that adds a block must call
+  // updateForReachableBlock(). Removing a block causes a dangling pointer
+  // within DeadEndBlocks, but this pointer can't be accessed by queries.
+  DeadEndBlocks *deBlocks = nullptr;
+
   // WorklistList is the actual list that we iterate over (for determinism).
   // Slots may be null, which should be ignored.
   SmallVector<SILBasicBlock *, 32> WorklistList;
@@ -215,8 +221,7 @@ private:
   bool canonicalizeSwitchEnums();
   bool simplifyThreadedTerminators();
   bool dominatorBasedSimplifications(SILFunction &Fn, DominanceInfo *DT);
-  bool dominatorBasedSimplify(DominanceAnalysis *DA,
-                              DeadEndBlocksAnalysis *deBlocksAnalysis);
+  bool dominatorBasedSimplify(DominanceAnalysis *DA);
   bool threadEdge(const ThreadInfo &ti);
 
   /// Remove the basic block if it has no predecessors. Returns true
@@ -679,8 +684,7 @@ bool SimplifyCFG::simplifyThreadedTerminators() {
 
 // Simplifications that walk the dominator tree to prove redundancy in
 // conditional branching.
-bool SimplifyCFG::dominatorBasedSimplify(
-    DominanceAnalysis *DA, DeadEndBlocksAnalysis *deBlocksAnalysis) {
+bool SimplifyCFG::dominatorBasedSimplify(DominanceAnalysis *DA) {
   // Get the dominator tree.
   DT = DA->get(&Fn);
 
@@ -701,12 +705,6 @@ bool SimplifyCFG::dominatorBasedSimplify(
   do {
     HasChangedInCurrentIter = false;
 
-    if (Changed) {
-      // Force dominator recomputation since we modified the cfg.
-      deBlocksAnalysis->invalidate(&Fn,
-                                   SILAnalysis::InvalidationKind::Everything);
-    }
-    auto *deBlocks = deBlocksAnalysis->get(&Fn);
     // Do dominator based simplification of terminator condition. This does not
     // and MUST NOT change the CFG without updating the dominator tree to
     // reflect such change.
@@ -1222,7 +1220,7 @@ bool SimplifyCFG::simplifyBranchOperands(OperandValueArrayRef Operands) {
     // All of our interesting simplifications are on single-value instructions
     // for now.
     if (auto *I = dyn_cast<SingleValueInstruction>(*O)) {
-      simplifyAndReplaceAllSimplifiedUsesAndErase(I, callbacks);
+      simplifyAndReplaceAllSimplifiedUsesAndErase(I, callbacks, deBlocks);
     }
   }
   return callbacks.hadCallbackInvocation();
@@ -3397,7 +3395,7 @@ bool SimplifyCFG::run() {
   // Do simplifications that require the dominator tree to be accurate.
   DominanceAnalysis *DA = PM->getAnalysis<DominanceAnalysis>();
   DeadEndBlocksAnalysis *deBlocksAnalysis =
-      PM->getAnalysis<DeadEndBlocksAnalysis>();
+    PM->getAnalysis<DeadEndBlocksAnalysis>();
 
   if (Changed) {
     // Force dominator recomputation since we modified the cfg.
@@ -3405,8 +3403,9 @@ bool SimplifyCFG::run() {
     deBlocksAnalysis->invalidate(&Fn,
                                  SILAnalysis::InvalidationKind::Everything);
   }
+  deBlocks = deBlocksAnalysis->get(&Fn);
 
-  Changed |= dominatorBasedSimplify(DA, deBlocksAnalysis);
+  Changed |= dominatorBasedSimplify(DA);
 
   DT = nullptr;
   // Now attempt to simplify the remaining blocks.

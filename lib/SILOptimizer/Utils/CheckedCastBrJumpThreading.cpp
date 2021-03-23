@@ -709,7 +709,8 @@ bool tryCheckedCastBrJumpThreading(
   SmallVectorImpl<SILBasicBlock *> &BlocksForWorklist,
   bool EnableOSSARewriteTerminator) {
 
-  CheckedCastBrJumpThreading CCBJumpThreading(Fn, DT, BlocksForWorklist,
+  CheckedCastBrJumpThreading CCBJumpThreading(Fn, DT, deBlocks,
+                                              BlocksForWorklist,
                                               EnableOSSARewriteTerminator);
   CCBJumpThreading.optimizeFunction();
   return !BlocksForWorklist.empty();
