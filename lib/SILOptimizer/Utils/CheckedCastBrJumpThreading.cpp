@@ -42,6 +42,13 @@ class CheckedCastBrJumpThreading {
   // Dominator information to be used.
   DominanceInfo *DT;
 
+  // DeadEndBlocks is used by OwnershipRAUW and incrementally updated within
+  // CheckedCastBrJumpThreading.
+  //
+  // TODO: incrementally update dead-end blocks during SimplifyCFG so it doesn't
+  // need to be recomputed each time tryCheckedCastBrJumpThreading is called.
+  DeadEndBlocks *deBlocks;
+
   // List of predecessors.
   typedef SmallVector<SILBasicBlock *, 8> PredList;
 
@@ -120,9 +127,12 @@ class CheckedCastBrJumpThreading {
 
 public:
   CheckedCastBrJumpThreading(SILFunction *Fn, DominanceInfo *DT,
+                             DeadEndBlocks *deBlocks,
                              SmallVectorImpl<SILBasicBlock *> &BlocksForWorklist)
-      : Fn(Fn), DT(DT), BlocksForWorklist(BlocksForWorklist),
-        BlocksToEdit(Fn), BlocksToClone(Fn) { }
+      : Fn(Fn), DT(DT), deBlocks(deBlocks), jointPostDomComputer(*deBlocks),
+        rauwContext(callbacks, *deBlocks, jointPostDomComputer),
+        BlocksForWorklist(BlocksForWorklist), BlocksToEdit(Fn),
+        BlocksToClone(Fn) { }
 
   void optimizeFunction();
 };
@@ -704,7 +714,7 @@ void CheckedCastBrJumpThreading::optimizeFunction() {
     Fn->verifyCriticalEdges();
 
   for (Edit *edit : Edits) {
-    BasicBlockCloner Cloner(edit->CCBBlock);
+    BasicBlockCloner Cloner(edit->CCBBlock, deBlocks);
     if (!Cloner.canCloneBlock())
       continue;
 
@@ -728,9 +738,11 @@ void CheckedCastBrJumpThreading::optimizeFunction() {
 
 namespace swift {
 
-bool tryCheckedCastBrJumpThreading(SILFunction *Fn, DominanceInfo *DT,
-                        SmallVectorImpl<SILBasicBlock *> &BlocksForWorklist) {
-  CheckedCastBrJumpThreading CCBJumpThreading(Fn, DT, BlocksForWorklist);
+bool tryCheckedCastBrJumpThreading(
+    SILFunction *Fn, DominanceInfo *DT, DeadEndBlocks *deBlocks,
+    SmallVectorImpl<SILBasicBlock *> &BlocksForWorklist) {
+  CheckedCastBrJumpThreading CCBJumpThreading(Fn, DT, deBlocks,
+                                              BlocksForWorklist);
   CCBJumpThreading.optimizeFunction();
   return !BlocksForWorklist.empty();
 }
