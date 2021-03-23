@@ -17,6 +17,14 @@ sil_stage canonical
 import Builtin
 import Swift
 
+class C {
+  @_hasStorage @_hasInitialValue var field: Int { get set }
+  @objc deinit
+    init()
+}
+
+sil @getC : $@convention(thin) () -> C
+
 protocol P {}
 
 // Test that debug_value_addr is not unnecessarilly lost during address projection sinking.
@@ -26,8 +34,6 @@ public class CC<R> {
 }
 
 sil @useAny : $@convention(thin) <V> (@in_guaranteed V) -> ()
-
-sil @getC : $@convention(thin) () -> C
 
 // Test that jump threading sinks a ref_element_addr, generating a
 // non-address phi for its operand.
