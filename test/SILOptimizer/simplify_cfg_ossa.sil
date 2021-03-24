@@ -1,4 +1,4 @@
-// RUN: %target-sil-opt -enable-sil-verify-all %s -simplify-cfg | %FileCheck %s
+// RUN: %target-sil-opt -enable-sil-verify-all %s -simplify-cfg -enable-ossa-simplify-cfg | %FileCheck %s
 
 // OSSA form of tests from simplify_cfg.sil and simplify_cfg_simple.sil.
 //
@@ -15,6 +15,7 @@
 sil_stage canonical
 
 import Builtin
+import Swift
 
 ///////////////////////
 // Type Declarations //
@@ -566,9 +567,6 @@ bb0:
 bb1:
   br bb1
 }
-
-import Builtin
-import Swift
 
 // CHECK-LABEL: @dead_loop
 // CHECK-NOT: br bb

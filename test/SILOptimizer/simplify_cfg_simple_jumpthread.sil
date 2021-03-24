@@ -1,7 +1,6 @@
 // RUN: %target-sil-opt -enable-sil-verify-all %s -simplify-cfg | %FileCheck %s
 
-// FIXME: Test with -enable-ossa-simplifycfg, -enable-ossa-rewriteterminators
-// to stage this in
+// REQUIRES: -enable-ossa-simplifycfg -enable-ossa-rewriteterminators
 
 // Tests tryJumpThreading with OSSA. This does not require
 // -jumpthread-simplify-cfg, which is only for dominator-based
@@ -9,8 +8,7 @@
 
 // Includes the OSSA form of tests from simplify_cfg_simple.sil,
 // simplify_cfg_opaque.sil, and simplify_cfg_address_phi.sil.
-//
-// ...along with new OSSA test cases.
+// ...and new OSSA test cases.
 
 sil_stage canonical
 
