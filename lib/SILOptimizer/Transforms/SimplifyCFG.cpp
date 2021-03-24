@@ -1207,7 +1207,14 @@ bool SimplifyCFG::tryJumpThreading(BranchInst *BI) {
 /// simplifyBranchOperands - Simplify operands of branches, since it can
 /// result in exposing opportunities for CFG simplification.
 bool SimplifyCFG::simplifyBranchOperands(OperandValueArrayRef Operands) {
-  InstModCallbacks callbacks;
+  InstModCallbacks callbacks {
+#ifndef NDEBUG
+    [](SILInstruction *instToKill) {
+      LLVM_DEBUG(llvm::dbgs() << "simplify and erase " << *instToKill);
+    }
+#endif
+  };
+
   for (auto O = Operands.begin(), E = Operands.end(); O != E; ++O) {
     // All of our interesting simplifications are on single-value instructions
     // for now.
