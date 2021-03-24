@@ -3375,6 +3375,16 @@ bool SimplifyCFG::run() {
   // First remove any block not reachable from the entry.
   bool Changed = removeUnreachableBlocks(Fn);
 
+  DeadEndBlocksAnalysis *deBlocksAnalysis =
+    PM->getAnalysis<DeadEndBlocksAnalysis>();
+  if (Changed) {
+    // Eliminate unreachable blocks from deBlocks. This isn't strictly necessary
+    // but avoids excess dangling pointers in deBlocks.
+    deBlocksAnalysis->invalidate(&Fn,
+                                 SILAnalysis::InvalidationKind::Everything);
+  }
+  deBlocks = deBlocksAnalysis->get(&Fn);
+
   // Find the set of loop headers. We don't want to jump-thread through headers.
   findLoopHeaders();
 
@@ -3393,12 +3403,11 @@ bool SimplifyCFG::run() {
 
   // Do simplifications that require the dominator tree to be accurate.
   DominanceAnalysis *DA = PM->getAnalysis<DominanceAnalysis>();
-  DeadEndBlocksAnalysis *deBlocksAnalysis =
-    PM->getAnalysis<DeadEndBlocksAnalysis>();
-
   if (Changed) {
     // Force dominator recomputation since we modified the cfg.
     DA->invalidate(&Fn, SILAnalysis::InvalidationKind::Everything);
+    // Eliminate unreachable blocks from deBlocks. This isn't strictly necessary
+    // but avoids excess dangling pointers in deBlocks.
     deBlocksAnalysis->invalidate(&Fn,
                                  SILAnalysis::InvalidationKind::Everything);
   }
