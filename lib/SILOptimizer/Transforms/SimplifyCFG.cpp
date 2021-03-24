@@ -819,14 +819,6 @@ getEnumCaseRecursive(SILValue Val, SILBasicBlock *UsedInBB, int RecursionDepth,
   if (auto *EI = dyn_cast<EnumInst>(Val))
     return EI->getElement();
 
-  // Check if the value is a switch_enum result.
-  if (auto *termResult = dyn_cast<SILArgument>(Val)) {
-    if (auto *term = termResult->getTerminatorForResult()) {
-      if (auto *predSEI = dyn_cast<SwitchEnumInst>(term)) {
-        return predSEI->getUniqueCaseForDestination(termResult->getParent());
-      }
-    }
-  }
   // Check if the value is dominated by a switch_enum, e.g.
   //   switch_enum %val, case A: bb1, case B: bb2
   // bb1:
