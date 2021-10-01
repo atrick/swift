@@ -283,7 +283,7 @@ public:
   bool isWithinBoundary(SILInstruction *inst) const;
 
   bool areUsesWithinBoundary(ArrayRef<Operand *> uses,
-                             DeadEndBlocks &deadEndBlocks) const;
+                             DeadEndBlocks *deadEndBlocks = nullptr) const;
 
   /// Compute liveness for a single SSA definition.
   void computeSSALiveness(SILValue def);
