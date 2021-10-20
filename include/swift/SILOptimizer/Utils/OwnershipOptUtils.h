@@ -39,6 +39,58 @@ inline bool requiresOSSACleanup(SILValue v) {
 //                   Basic scope and lifetime extension API
 //===----------------------------------------------------------------------===//
 
+class OSSALifetimeCompletion {
+  // Cache intructions already handled by the recursive algorithm to avoid
+  // recomputing their lifetimes.
+  ValueSet completedValues;
+
+public:
+  OSSALifetimeCompletion(SILFunction *function) : completedValues(function) {}
+
+  /// Insert a lifetime-ending instruction on every path to complete the OSSA
+  /// lifetime of \p value.
+  ///
+  /// \p value must be a non-lexical owned value or a non-lexical borrow
+  /// introducer.
+  ///
+  /// Returns true if any new instructions were created to complete the
+  /// lifetime.
+  bool completeNonLexicalLifetime(SILValue value);
+
+  /// End the lifetime of \p value in dead-end blocks.
+  ///
+  /// \p value must be a lexical owned value or a lexical borrow
+  /// introducer.
+  bool completeLexicalLifetime(SILValue value);
+
+  enum class LifetimeCompletion { NoLifetime, AlreadyComplete, WasCompleted };
+
+  inline LifetimeCompletion completeOSSALifetime(SILValue value) {
+    if (value->getOwnershipKind() == OwnershipKind::None)
+      return LifetimeCompletion::NoLifetime;
+
+    if (value->getOwnershipKind() != OwnershipKind::Owned) {
+      BorrowedValue borrowedValue(value);
+      if (!borrowedValue)
+        return LifetimeCompletion::NoLifetime;
+
+      if (!borrowedValue.isLocalScope())
+        return LifetimeCompletion::AlreadyComplete;
+    }
+    if (!completedValues.insert(borrowedValue.value))
+      return LifetimeCompletion::AlreadyComplete;
+
+    if (value->isLexical())
+      return completeLexicalLifetime(value)
+                 ? LifetimeCompletion::WasCompleted
+                 : LifetimeCompletion::AlreadyComplete;
+
+    return completeNonLexicalLifetime(value)
+               ? LifetimeCompletion::WasCompleted
+               : LifetimeCompletion::AlreadyComplete;
+  }
+}
+
 /// Rewrite the lifetime of \p ownedValue to match \p lifetimeBoundary. This may
 /// insert copies at forwarding consumes, including phis.
 ///
