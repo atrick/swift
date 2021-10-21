@@ -1022,7 +1022,7 @@ bool AddressOwnership::areUsesWithinLifetime(
   // Compute the reference value's liveness.
   PrunedLiveness liveness;
   liveness.computeSSALiveness(root);
-  return liveness.areUsesWithinBoundary(uses, &deadEndBlocks);
+  return liveness.areUsesWithinBoundary(uses, deadEndBlocks);
 }
 
 //===----------------------------------------------------------------------===//

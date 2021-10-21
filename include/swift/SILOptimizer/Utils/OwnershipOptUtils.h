@@ -114,7 +114,6 @@ bool createBorrowScopeForPhiOperands(SILPhiArgument *newPhi);
 
 SILValue
 makeGuaranteedValueAvailable(SILValue value, SILInstruction *user,
-                             DeadEndBlocks &deBlocks,
                              InstModCallbacks callbacks = InstModCallbacks());
 
 /// Compute the liveness boundary for a guaranteed value. Returns true if no
@@ -136,7 +135,6 @@ bool computeGuaranteedBoundary(SILValue value,
 class GuaranteedOwnershipExtension {
   // --- context
   InstructionDeleter &deleter;
-  DeadEndBlocks &deBlocks;
 
   // --- analysis state
   PrunedLiveness guaranteedLiveness;
@@ -145,9 +143,8 @@ class GuaranteedOwnershipExtension {
   BeginBorrowInst *beginBorrow = nullptr;
 
 public:
-  GuaranteedOwnershipExtension(InstructionDeleter &deleter,
-                               DeadEndBlocks &deBlocks)
-      : deleter(deleter), deBlocks(deBlocks) {}
+  GuaranteedOwnershipExtension(InstructionDeleter &deleter)
+      : deleter(deleter) {}
 
   void clear() {
     guaranteedLiveness.clear();
@@ -200,7 +197,6 @@ public:
 struct OwnershipFixupContext {
   Optional<InstModCallbacks> inlineCallbacks;
   InstModCallbacks &callbacks;
-  DeadEndBlocks &deBlocks;
 
   // Cache the use-points for the lifetime of an inner guaranteed value (which
   // does not introduce a borrow scope) after checking validity. These will be
@@ -235,8 +231,8 @@ struct OwnershipFixupContext {
   };
   AddressFixupContext extraAddressFixupInfo;
 
-  OwnershipFixupContext(InstModCallbacks &callbacks, DeadEndBlocks &deBlocks)
-      : callbacks(callbacks), deBlocks(deBlocks) {}
+  OwnershipFixupContext(InstModCallbacks &callbacks)
+      : callbacks(callbacks) {}
 
   void clear() {
     guaranteedUsePoints.clear();
