@@ -1005,9 +1005,8 @@ canMerge(PostDominanceInfo *postDomTree,
 
 static bool extendOwnership(BeginAccessInst *parentInst,
                             BeginAccessInst *childInst,
-                            InstructionDeleter &deleter,
-                            DeadEndBlocks &deBlocks) {
-  GuaranteedOwnershipExtension extension(deleter, deBlocks,
+                            InstructionDeleter &deleter) {
+  GuaranteedOwnershipExtension extension(deleter,
                                          parentInst->getFunction());
   auto status = extension.checkAddressOwnership(parentInst, childInst);
   switch (status) {
@@ -1080,7 +1079,7 @@ mergeAccesses(SILFunction *F, PostDominanceInfo *postDomTree,
     if (!canMerge(postDomTree, blockToSCCMap, parentIns, childIns))
       continue;
 
-    if (!extendOwnership(parentIns, childIns, deleter, deBlocks))
+    if (!extendOwnership(parentIns, childIns, deleter))
       return false;
 
     LLVM_DEBUG(llvm::dbgs()

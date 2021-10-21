@@ -1184,7 +1184,7 @@ bool AddressOwnership::areUsesWithinLifetime(
 
   // FIXME (implicit borrow): handle reborrows transitively just like above so
   // we don't bail out if a uses is within the reborrowed scope.
-  return liveness.areUsesWithinBoundary(uses, &deadEndBlocks);
+  return liveness.areUsesWithinBoundary(uses, deadEndBlocks);
 }
 
 //===----------------------------------------------------------------------===//
