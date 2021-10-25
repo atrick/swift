@@ -1012,7 +1012,7 @@ struct OwnershipRAUWPrepare {
     if (auto *blockArg = dyn_cast<SILPhiArgument>(oldValue))
       return blockArg->getTerminatorForResult();
 
-    return cast<SingleValueInstruction>(oldValue);
+    return oldValue->getDefiningInstruction();
   }
 
   SILValue prepareReplacement(SILValue newValue);
@@ -1222,11 +1222,6 @@ OwnershipRAUWHelper::OwnershipRAUWHelper(OwnershipFixupContext &inputCtx,
   if (!oldValue->getFunction()->hasOwnership())
     return;
 
-  // This utility currently only handles erasing SingleValueInstructions and
-  // terminator results.
-  assert(isa<SingleValueInstruction>(inputOldValue)
-         || cast<SILPhiArgument>(inputOldValue)->isTerminatorResult());
-
   // Precondition: If \p oldValue is a BorrowedValue that introduces a local
   // borrow scope, then \p newValue must either be defined in the same block as
   // \p oldValue, or it must dominate \p oldValue (rather than merely
@@ -1308,8 +1303,11 @@ OwnershipRAUWHelper::OwnershipRAUWHelper(OwnershipFixupContext &inputCtx,
   if (!addressOwnership.hasLocalOwnershipLifetime())
     return;
 
+  SILValue baseAddress = addressOwnership.base.getBaseAddress();
+  if (!isa<SingleValueInstruction>(baseAddress))
+    return;
+
   ctx->extraAddressFixupInfo.base = addressOwnership.base;
-  SILValue baseAddress = ctx->extraAddressFixupInfo.base.getBaseAddress();
 
   // For now, just gather up uses
   //
@@ -1377,7 +1375,7 @@ OwnershipRAUWHelper::perform(SILValue replacementValue) {
   // Make sure to always clear our context after we transform.
   SWIFT_DEFER { ctx->clear(); };
 
-  auto *svi = dyn_cast<SingleValueInstruction>(oldValue);
+  auto *svi = cast<SingleValueInstruction>(oldValue);
   return replaceAllUsesAndErase(svi, replacementValue, ctx->callbacks);
 }
 
