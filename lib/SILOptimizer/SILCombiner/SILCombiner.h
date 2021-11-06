@@ -417,7 +417,7 @@ private:
 
   /// Add reachable code to the worklist. Meant to be used when starting to
   /// process a new function.
-  void addReachableCodeToWorklist(SILBasicBlock *BB);
+  void addReachableCodeToWorklist(SILBasicBlock *entryBB);
 
   typedef SmallVector<SILInstruction*, 4> UserListTy;
 

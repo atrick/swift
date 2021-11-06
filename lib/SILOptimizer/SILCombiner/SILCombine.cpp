@@ -71,8 +71,8 @@ static llvm::cl::opt<bool> EnableSILCombineCanonicalize(
 /// particular, we DCE instructions as we go, to avoid adding them to the
 /// worklist (this significantly speeds up SILCombine on code where many
 /// instructions are dead or constant).
-void SILCombiner::addReachableCodeToWorklist(SILBasicBlock *BB) {
-  BasicBlockWorklist Worklist(BB);
+void SILCombiner::addReachableCodeToWorklist(SILBasicBlock *entryBB) {
+  BasicBlockWorklist Worklist(entryBB);
   llvm::SmallVector<SILInstruction *, 128> InstrsForSILCombineWorklist;
 
   // Use a separate deleter to avoid invoking the SILInstructionWorklist
