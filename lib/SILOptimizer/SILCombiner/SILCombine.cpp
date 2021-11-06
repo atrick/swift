@@ -83,6 +83,9 @@ void SILCombiner::addReachableCodeToWorklist(SILBasicBlock *entryBB) {
   while (SILBasicBlock *BB = Worklist.pop()) {
     for (SILInstruction *inst : localDeleter.updatingRange(BB)) {
       // DCE instruction if trivially dead.
+      LLVM_DEBUG(if (localDeleter.isDead(inst)) llvm::dbgs()
+                 << "SC: DCE: " << *inst << '\n');
+
       if (localDeleter.deleteIfDead(inst)) {
         ++NumDeadInst;
         continue;
@@ -276,6 +279,7 @@ void SILCombiner::canonicalizeOSSALifetimes(SILInstruction *currentInst) {
 }
 
 bool SILCombiner::doOneIteration(SILFunction &F, unsigned Iteration) {
+  SWIFT_DEFER { llvm::DebugFlag = false; };
   LLVM_DEBUG(llvm::dbgs() << "\n\nSILCOMBINE ITERATION #" << Iteration << " on "
                           << F.getName() << "\n");
 
