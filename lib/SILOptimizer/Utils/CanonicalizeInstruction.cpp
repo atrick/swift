@@ -33,41 +33,27 @@
 
 using namespace swift;
 
-// Tracing within the implementation can also be activiated by the pass.
-#define DEBUG_TYPE pass.debugType
+// STATISTIC uses the default DEBUG_TYPE.
+#define DEBUG_TYPE CanonicalizeInstruction::defaultDebugType
+STATISTIC(NumSimplified, "Number of instructions simplified");
 
-// Vtable anchor.
-CanonicalizeInstruction::~CanonicalizeInstruction() {}
+// Tracing within the implementation can also be activiated by the pass.
+#undef DEBUG_TYPE
+#define DEBUG_TYPE pass.debugType
 
 // Helper to delete an instruction, or mark it for deletion.
 //
-// Return an iterator to the next non-deleted instruction. The incoming iterator
-// may already have advanced beyond 'inst'.
-static SILBasicBlock::iterator killInstruction(SILInstruction *inst,
-                                               SILBasicBlock::iterator nextII,
-                                               CanonicalizeInstruction &pass) {
-  if (nextII == inst->getIterator())
-    ++nextII;
-  pass.killInstruction(inst);
-  return nextII;
-}
-
-// Helper to delete, or mark for deletion, an instruction with potential debug
-// or end of scope uses. All "real" uses must already be removed.
+// \p inst may not have any remaining users except for incidental uses,
+// including debug_value, end_borrow. It may also have destroy_value, which is
+// effectively an incidental use even though it is not yet explicitly recognized
+// as such.
 //
-// fix_lifetime uses are not currently handled here. They are generally
+// FIXME: fix_lifetime uses are not currently handled here. They are generally
 // (incorrectly) treated as "incidental" uses, but no canonicalizations need
 // them yet.
-static SILBasicBlock::iterator
-killInstAndIncidentalUses(SingleValueInstruction *inst,
-                          SILBasicBlock::iterator nextII,
-                          CanonicalizeInstruction &pass) {
-  while (!inst->use_empty()) {
-    auto *user = inst->use_begin()->getUser();
-    assert(user->isDebugInstruction() || isEndOfScopeMarker(user));
-    nextII = killInstruction(user, nextII, pass);
-  }
-  return killInstruction(inst, nextII, pass);
+static void killInstruction(SILInstruction *inst,
+                            CanonicalizeInstruction &pass) {
+  pass.deleter.forceDelete(inst);
 }
 
 //===----------------------------------------------------------------------===//

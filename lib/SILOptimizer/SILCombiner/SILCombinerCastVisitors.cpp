@@ -682,7 +682,6 @@ SILInstruction *
 SILCombiner::
 visitUnconditionalCheckedCastInst(UnconditionalCheckedCastInst *UCCI) {
   if (CastOpt.optimizeUnconditionalCheckedCastInst(UCCI)) {
-    MadeChange = true;
     return nullptr;
   }
   // FIXME: rename from RemoveCondFails to RemoveRuntimeAsserts.
