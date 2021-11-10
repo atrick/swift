@@ -1099,9 +1099,9 @@ bool swift::simplifyUsers(SingleValueInstruction *inst) {
     if (!svi)
       continue;
 
-    callbacks.resetHadCallbackInvocation();
-    simplifyAndReplaceAllSimplifiedUsesAndErase(svi, callbacks);
-    changed |= callbacks.hadCallbackInvocation();
+    deleter.getCallbacks().resetHadCallbackInvocation();
+    simplifyAndReplaceAllSimplifiedUsesAndErase(svi, deleter);
+    changed |= deleter.getCallbacks().hadCallbackInvocation();
   }
 
   return changed;

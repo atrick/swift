@@ -1365,8 +1365,7 @@ SILValue OwnershipRAUWHelper::prepareReplacement(SILValue rewrittenNewValue) {
   return rauwPrepare.prepareReplacement(newValue);
 }
 
-SILBasicBlock::iterator
-OwnershipRAUWHelper::perform(SILValue replacementValue) {
+void OwnershipRAUWHelper::perform(SILValue replacementValue) {
   if (!replacementValue)
     replacementValue = prepareReplacement();
 
@@ -1376,7 +1375,9 @@ OwnershipRAUWHelper::perform(SILValue replacementValue) {
   SWIFT_DEFER { ctx->clear(); };
 
   auto *svi = cast<SingleValueInstruction>(oldValue);
-  return replaceAllUsesAndErase(svi, replacementValue, ctx->callbacks);
+  replaceAllUses(svi, replacementValue, ctx->deleter);
+
+  ctx->deleter.forceDeleteAndFixLifetimes(svi);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1389,26 +1390,38 @@ namespace {
 /// can replace use->get() with newValue and preserve ownership invariants. We
 /// assume that old value will be left alone and not deleted so we insert
 /// compensating cleanups.
-struct SingleUseReplacementUtility {
+class SingleUseReplacementUtility {
   Operand *use;
   SILValue newValue;
   OwnershipFixupContext &ctx;
 
-  SILBasicBlock::iterator handleUnowned();
-  SILBasicBlock::iterator handleOwned();
-  SILBasicBlock::iterator handleGuaranteed();
+public:
+  SingleUseReplacementUtility(Operand *use, SILValue newValue,
+                              OwnershipFixupContext &ctx)
+      : use(use), newValue(newValue), ctx(ctx) {}
 
-  SILBasicBlock::iterator perform();
+  void perform();
 
   OwnershipLifetimeExtender getLifetimeExtender() { return {ctx}; }
 
-  const InstModCallbacks &getCallbacks() const { return ctx.callbacks; }
+  const InstModCallbacks &getCallbacks() const { return ctx.getCallbacks(); }
+
+protected:
+  void replaceUse(SILValue replacement) {
+    if (auto *newInst = replaceOSSAOperand(use, replacement)) {
+      ctx.getCallbacks().createdNewInst(newInst);
+    }
+  }
+
+  void handleUnowned();
+  void handleOwned();
+  void handleGuaranteed();
 };
 
 } // anonymous namespace
 
-SILBasicBlock::iterator SingleUseReplacementUtility::handleUnowned() {
-  auto &callbacks = ctx.callbacks;
+void SingleUseReplacementUtility::handleUnowned() {
+  auto &callbacks = ctx.getCallbacks();
   switch (newValue.getOwnershipKind()) {
   case OwnershipKind::None:
     llvm_unreachable("Should have been handled elsewhere");
@@ -1416,15 +1429,18 @@ SILBasicBlock::iterator SingleUseReplacementUtility::handleUnowned() {
     llvm_unreachable("Invalid for values");
   case OwnershipKind::Unowned:
     // An unowned value can always be RAUWed with another unowned value.
-    return replaceSingleUse(use, newValue, callbacks);
+    replaceUse(newValue);
+    return;
   case OwnershipKind::Guaranteed: {
     // If we have an unowned value use that we want to replace with a guaranteed
     // value, we need to ensure that the guaranteed value is live at that use
     // point. If we know that is always true, just perform the replace.
     //
     // FIXME: Expand the cases here.
-    if (isa<SILFunctionArgument>(newValue))
-      return replaceSingleUse(use, newValue, callbacks);
+    if (isa<SILFunctionArgument>(newValue)) {
+      replaceUse(newValue);
+      return;
+    }
 
     // Otherwise, we need to lifetime extend newValue to the use. If the actual
     // use is a terminator, we need to insert an unchecked_ownership_conversion
@@ -1444,7 +1460,8 @@ SILBasicBlock::iterator SingleUseReplacementUtility::handleUnowned() {
     assert(!use->isLifetimeEnding()
            && "Test single-use replacement of a scope-ending instruction");
 
-    return replaceSingleUse(use, borrow, callbacks);
+    replaceUse(borrow);
+    return;
   }
   case OwnershipKind::Owned: {
     // If we have an unowned value use that we want to replace with an owned
@@ -1465,19 +1482,19 @@ SILBasicBlock::iterator SingleUseReplacementUtility::handleUnowned() {
         auto *newInst = builder.createUncheckedOwnershipConversion(
             ti->getLoc(), use->get(), OwnershipKind::Unowned);
         callbacks.createdNewInst(newInst);
-        callbacks.setUseValue(use, newInst);
       }
     }
 
     auto extender = getLifetimeExtender();
     SILValue copy = extender.createPlusZeroCopy(newValue, {use});
-    return replaceSingleUse(use, copy, callbacks);
+    replaceUse(copy);
+    return;
   }
   }
   llvm_unreachable("covered switch isn't covered?!");
 }
 
-SILBasicBlock::iterator SingleUseReplacementUtility::handleGuaranteed() {
+void SingleUseReplacementUtility::handleGuaranteed() {
   // Ok, our use is guaranteed and our new value may not be guaranteed.
   auto extender = getLifetimeExtender();
 
@@ -1486,10 +1503,10 @@ SILBasicBlock::iterator SingleUseReplacementUtility::handleGuaranteed() {
 
   // Then replace use->get() with this copy. We will insert compensating end
   // scope instructions on use->get() if we need to.
-  return replaceSingleUse(use, copy, ctx.callbacks);
+  replaceUse(copy);
 }
 
-SILBasicBlock::iterator SingleUseReplacementUtility::handleOwned() {
+void SingleUseReplacementUtility::handleOwned() {
   // Ok, our old value is owned and our new value may not be owned. First
   // lifetime extend newValue to use->getUser() inserting destroy_values along
   // any paths that do not go through use->getUser().
@@ -1501,7 +1518,8 @@ SILBasicBlock::iterator SingleUseReplacementUtility::handleOwned() {
     SILValue copy = extender.createPlusOneCopy(newValue, use->getUser());
     // Then replace use->get() with this copy. We will insert compensating end
     // scope instructions on use->get() if we need to.
-    return replaceSingleUse(use, copy, ctx.callbacks);
+    replaceUse(copy);
+    return;
   }
 
   // If we don't have a lifetime ending use, just create a +0 copy and set the
@@ -1511,19 +1529,21 @@ SILBasicBlock::iterator SingleUseReplacementUtility::handleOwned() {
 
   // Then replace use->get() with this copy. We will insert compensating end
   // scope instructions on use->get() if we need to.
-  return replaceSingleUse(use, copy, ctx.callbacks);
+  replaceUse(copy);
 }
 
-SILBasicBlock::iterator SingleUseReplacementUtility::perform() {
+void SingleUseReplacementUtility::perform() {
   auto oldValue = use->get();
   assert(oldValue->getFunction()->hasOwnership());
 
-  // If our new value is just none, we can pass anything to do it so just RAUW
-  // and return.
+  // If our new value is just none, we can pass anything to do it so just
+  // replace and return.
   //
-  // NOTE: This handles RAUWing with undef.
-  if (newValue.getOwnershipKind() == OwnershipKind::None)
-    return replaceSingleUse(use, newValue, ctx.callbacks);
+  // NOTE: This handles replacing with undef.
+  if (newValue.getOwnershipKind() == OwnershipKind::None) {
+    replaceUse(newValue);
+    return;
+  }
 
   assert(SILValue(oldValue).getOwnershipKind() != OwnershipKind::None);
 
@@ -1536,11 +1556,14 @@ SILBasicBlock::iterator SingleUseReplacementUtility::perform() {
   case OwnershipKind::Any:
     llvm_unreachable("Invalid for values");
   case OwnershipKind::Guaranteed:
-    return handleGuaranteed();
+    handleGuaranteed();
+    return;
   case OwnershipKind::Owned:
-    return handleOwned();
+    handleOwned();
+    return;
   case OwnershipKind::Unowned:
-    return handleUnowned();
+    handleUnowned();
+    return;
   }
   llvm_unreachable("Covered switch isn't covered?!");
 }
@@ -1580,16 +1603,16 @@ OwnershipReplaceSingleUseHelper::OwnershipReplaceSingleUseHelper(
   }
 }
 
-SILBasicBlock::iterator OwnershipReplaceSingleUseHelper::perform() {
+void OwnershipReplaceSingleUseHelper::perform() {
   assert(isValid() && "OwnershipReplaceSingleUseHelper invalid?!");
 
   if (!use->getUser()->getFunction()->hasOwnership())
-    return replaceSingleUse(use, newValue, ctx->callbacks);
+    return use->set(newValue);
 
   // Make sure to always clear our context after we transform.
   SWIFT_DEFER { ctx->clear(); };
   SingleUseReplacementUtility utility{use, newValue, *ctx};
-  return utility.perform();
+  utility.perform();
 }
 
 //===----------------------------------------------------------------------===//

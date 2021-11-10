@@ -974,10 +974,9 @@ bool CSE::processNode(DominanceInfoNode *Node) {
 
     // If the instruction can be simplified (e.g. X+0 = X) then replace it with
     // its simpler value.
-    InstModCallbacks callbacks;
-    nextI = simplifyAndReplaceAllSimplifiedUsesAndErase(Inst, callbacks,
-                                                        &DeadEndBBs);
-    if (callbacks.hadCallbackInvocation()) {
+    deleter.getCallbacks().resetHadCallbackInvocation();
+    simplifyAndReplaceAllSimplifiedUsesAndErase(inst, deleter, &DeadEndBBs);
+    if (deleter.getCallbacks().hadCallbackInvocation()) {
       ++NumSimplify;
       Changed = true;
       continue;
