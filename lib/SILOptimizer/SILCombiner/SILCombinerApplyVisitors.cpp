@@ -1208,11 +1208,11 @@ SILInstruction *SILCombiner::createApplyWithConcreteType(
     // happened. Otherwise SILCombine will infinitely iterate. This works as
     // long as the instructions in this tracking list were never added to the
     // SILCombine Worklist.
-    InstructionDeleter deleter;
+    InstructionDeleter localDeleter;
     for (SILInstruction *inst : *Builder.getTrackingList()) {
-      deleter.trackIfDead(inst);
+      localDeleter.trackIfDead(inst);
     }
-    deleter.cleanupDeadInstructions();
+    localDeleter.cleanupDeadInstructions();
     Builder.getTrackingList()->clear();
     return nullptr;
   }
