@@ -667,8 +667,7 @@ SILInstruction *SILCombiner::visitUnconditionalCheckedCastAddrInst(
   }
 
   // Perform the purly type-based cast optimization.
-  if (CastOpt.optimizeUnconditionalCheckedCastAddrInst(uccai))
-    MadeChange = true;
+  CastOpt.optimizeUnconditionalCheckedCastAddrInst(uccai);
 
   return nullptr;
 }
@@ -851,8 +850,7 @@ SILCombiner::visitThickToObjCMetatypeInst(ThickToObjCMetatypeInst *TTOCMI) {
   //
   // (thick_to_objc_metatype (existential_metatype @thick)) ->
   // (existential_metatype @objc_metatype)
-  if (CastOpt.optimizeMetatypeConversion(TTOCMI, MetatypeRepresentation::Thick))
-    MadeChange = true;
+  CastOpt.optimizeMetatypeConversion(TTOCMI, MetatypeRepresentation::Thick);
 
   return nullptr;
 }
@@ -874,16 +872,14 @@ SILCombiner::visitObjCToThickMetatypeInst(ObjCToThickMetatypeInst *OCTTMI) {
   //
   // (objc_to_thick_metatype (existential_metatype @objc_metatype)) ->
   // (existential_metatype @thick)
-  if (CastOpt.optimizeMetatypeConversion(OCTTMI, MetatypeRepresentation::ObjC))
-    MadeChange = true;
+  CastOpt.optimizeMetatypeConversion(OCTTMI, MetatypeRepresentation::ObjC);
 
   return nullptr;
 }
 
 SILInstruction *
 SILCombiner::visitCheckedCastBranchInst(CheckedCastBranchInst *CBI) {
-  if (CastOpt.optimizeCheckedCastBranchInst(CBI))
-    MadeChange = true;
+  CastOpt.optimizeCheckedCastBranchInst(CBI);
 
   return nullptr;
 }
@@ -959,8 +955,7 @@ visitCheckedCastAddrBranchInst(CheckedCastAddrBranchInst *CCABI) {
   }
 
   // Perform the purly type-based cast optimization.
-  if (CastOpt.optimizeCheckedCastAddrBranchInst(CCABI))
-    MadeChange = true;
+  CastOpt.optimizeCheckedCastAddrBranchInst(CCABI);
 
   return nullptr;
 }
