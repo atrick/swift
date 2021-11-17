@@ -1017,7 +1017,7 @@ SILCombiner::visitConvertFunctionInst(ConvertFunctionInst *cfi) {
         SILValue newValue = cfi->getConverted();
         if (newValue.getOwnershipKind() != OwnershipKind::Owned &&
             newValue.getOwnershipKind() != OwnershipKind::Guaranteed) {
-          getInstModCallbacks().setUseValue(use, newValue);
+          setUseValue(use, newValue);
           fas.setSubstCalleeType(newValue->getType().castTo<SILFunctionType>());
           continue;
         }
