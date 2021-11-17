@@ -64,7 +64,10 @@ SILCombiner::visitRefToRawPointerInst(RefToRawPointerInst *rrpi) {
     if (urci->getOperand()->getType().isAnyClassReferenceType()) {
       rrpi->setOperand(urci->getOperand());
       rrpi->moveBefore(urci);
-      return urci->use_empty() ? eraseInstFromFunction(*urci) : nullptr;
+      if (urci->use_empty()) {
+        eraseInstFromFunction(*urci);
+      }
+      return nullptr;
     }
 
     // Otherwise, we ened to use an unchecked_trivial_bit_cast insert it at
@@ -78,7 +81,10 @@ SILCombiner::visitRefToRawPointerInst(RefToRawPointerInst *rrpi) {
     });
     rrpi->replaceAllUsesWith(utbi);
     eraseInstFromFunction(*rrpi);
-    return urci->use_empty() ? eraseInstFromFunction(*urci) : nullptr;
+    if (urci->use_empty()) {
+      eraseInstFromFunction(*urci);
+    }
+    return nullptr;
   }
 
   // (ref_to_raw_pointer (open_existential_ref (init_existential_ref x))) ->
@@ -92,7 +98,8 @@ SILCombiner::visitRefToRawPointerInst(RefToRawPointerInst *rrpi) {
         return b.createRefToRawPointer(l, ieri->getOperand(), rrpi->getType());
       });
       rrpi->replaceAllUsesWith(utbi);
-      return eraseInstFromFunction(*rrpi);
+      eraseInstFromFunction(*rrpi);
+      return nullptr;
     }
   }
 
@@ -510,7 +517,8 @@ SILInstruction *SILCombiner::visitEndCOWMutationInst(EndCOWMutationInst *ECM) {
   ECM->replaceAllUsesWith(refCast);
   refCast->setOperand(0, newECM);
   refCast->moveAfter(newECM);
-  return eraseInstFromFunction(*ECM);
+  eraseInstFromFunction(*ECM);
+  return nullptr;
 }
 
 SILInstruction *
@@ -571,7 +579,8 @@ SILCombiner::visitUncheckedRefCastAddrInst(UncheckedRefCastAddrInst *urci) {
   Builder.emitStoreValueOperation(loc, cast, urci->getDest(),
                                   StoreOwnershipQualifier::Init);
 
-  return eraseInstFromFunction(*urci);
+  eraseInstFromFunction(*urci);
+  return nullptr;
 }
 
 template <class CastInst>
@@ -668,7 +677,8 @@ SILInstruction *SILCombiner::visitUnconditionalCheckedCastAddrInst(
     builder.createDestroyAddr(loc, uccai->getSrc());
     builder.emitStoreValueOperation(loc, val, uccai->getDest(),
                                     StoreOwnershipQualifier::Init);
-    return eraseInstFromFunction(*uccai);
+    eraseInstFromFunction(*uccai);
+    return nullptr;
   }
 
   // Perform the purly type-based cast optimization.
@@ -843,7 +853,8 @@ SILInstruction *
 SILCombiner::visitThickToObjCMetatypeInst(ThickToObjCMetatypeInst *TTOCMI) {
   if (auto *OCTTMI = dyn_cast<ObjCToThickMetatypeInst>(TTOCMI->getOperand())) {
     TTOCMI->replaceAllUsesWith(OCTTMI->getOperand());
-    return eraseInstFromFunction(*TTOCMI);
+    eraseInstFromFunction(*TTOCMI);
+    return nullptr;
   }
 
   // Perform the following transformations:
@@ -865,7 +876,8 @@ SILInstruction *
 SILCombiner::visitObjCToThickMetatypeInst(ObjCToThickMetatypeInst *OCTTMI) {
   if (auto *TTOCMI = dyn_cast<ThickToObjCMetatypeInst>(OCTTMI->getOperand())) {
     OCTTMI->replaceAllUsesWith(TTOCMI->getOperand());
-    return eraseInstFromFunction(*OCTTMI);
+    eraseInstFromFunction(*OCTTMI);
+    return nullptr;
   }
 
   // Perform the following transformations:
@@ -957,7 +969,8 @@ visitCheckedCastAddrBranchInst(CheckedCastAddrBranchInst *CCABI) {
     auto *trueVal = builder.createIntegerLiteral(loc, boolTy, 1);
     builder.createCondBranch(loc, trueVal, CCABI->getSuccessBB(),
                              CCABI->getFailureBB());
-    return eraseInstFromFunction(*CCABI);
+    eraseInstFromFunction(*CCABI);
+    return nullptr;
   }
 
   // Perform the purly type-based cast optimization.

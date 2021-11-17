@@ -1217,6 +1217,8 @@ SILInstruction *SILCombiner::createApplyWithConcreteType(
     return nullptr;
   }
   // Now create the new apply instruction.
+  auto nextI = std::next(Apply.getInstruction()->getIterator());
+
   SILBuilderWithScope ApplyBuilder(Apply.getInstruction(), BuilderCtx);
   FullApplySite NewApply;
   if (auto *TAI = dyn_cast<TryApplyInst>(Apply))
@@ -1231,9 +1233,6 @@ SILInstruction *SILCombiner::createApplyWithConcreteType(
 
   if (auto NewAI = dyn_cast<ApplyInst>(NewApply))
     replaceInstUsesWith(*cast<ApplyInst>(Apply.getInstruction()), NewAI);
-
-  auto nextI = std::next(NewApply.getInstruction()->getIterator());
-  eraseInstFromFunction(*Apply.getInstruction(), nextI);
 
   // cleanup immediately after the call on all paths reachable from the call.
   SmallVector<SILInstruction *, 2> cleanupPositions;
@@ -1254,6 +1253,9 @@ SILInstruction *SILCombiner::createApplyWithConcreteType(
       cleanupBuilder.createDeallocStack(cleanupLoc, argCopy.tempArg);
     }
   }
+  // Erase the original call only after fixing the lifetime of its
+  // operands. Otherwise its operands will be incorrectly considered dead.
+  eraseInstFromFunction(*Apply.getInstruction());
   return NewApply.getInstruction();
 }
 
