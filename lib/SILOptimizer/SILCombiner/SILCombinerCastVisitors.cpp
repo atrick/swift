@@ -108,91 +108,78 @@ SILCombiner::visitRefToRawPointerInst(RefToRawPointerInst *rrpi) {
 
 namespace {
 
-/// A folder object for sequences of forwarding instructions that forward owned
-/// ownership. Is used to detect if we can delete the intermediate forwarding
-/// instructions without ownership issues and then allows the user to either
-/// delete all of the rest of the forwarding instructions and then replace front
-/// with a new value or set front's operand to a new value.
-class SingleBlockOwnedForwardingInstFolder {
-  SmallVector<SingleValueInstruction *, 4> rest;
-  SILCombiner &SC;
+/// A folder object for sequences of forwarding instructions. Used to detect if
+/// we can delete the intermediate forwarding instructions without fixing
+/// ownership lifetime. Allows the client to either replace front with a new
+/// value or set front's operand to a new value.
+class ForwardingInstFolder {
+  SILCombiner &sc;
   SingleValueInstruction *front;
+  SingleValueInstruction *prevUser;
 
 public:
-  SingleBlockOwnedForwardingInstFolder(
-      SILCombiner &SC, SingleValueInstruction *instructionToFold)
-      : SC(SC), front(instructionToFold) {
-    // If our initial instruction to fold isn't owned, set it to nullptr to
-    // indicate invalid.
-    if (SILValue(instructionToFold).getOwnershipKind() != OwnershipKind::Owned)
-      front = nullptr;
-  }
+  ForwardingInstFolder(SILCombiner &sc,
+                       SingleValueInstruction *instructionToFold)
+      : sc(sc), front(instructionToFold), prevUser(front) {}
 
-  bool isValid() const { return bool(front); }
+  bool checkNextDefOwnership(SingleValueInstruction *nextDef) {
+    assert(prevUser->getOperand(0) == nextDef);
 
-  bool add(SingleValueInstruction *next) {
-    assert(isValid());
-    if (SILValue(next).getOwnershipKind() != OwnershipKind::Owned)
-      return false;
-
-    if (next->getSingleUse()) {
-      rest.push_back(next);
+    if (SILValue(nextDef).getOwnershipKind() != OwnershipKind::Owned) {
+      prevUser = nextDef;
       return true;
     }
-
-    if (front->getParent() != next->getParent()) {
-      return false;
+    // Currently handles a single ownership chain.
+    //
+    // TODO: Handle extra destroy_value uses by gathering them for each
+    // intermediate use and moving them to the the incoming value.
+    if (Operand *singleUse = getSingleLiveUse(nextDef)) {
+      assert(singleUse->getUser() == prevUser);
+      prevUser = nextDef;
+      return true;
     }
-
-    // Otherwise, since the two values are in the same block and we want to
-    // optimize only if our original value doesn't have any non-debug uses, we
-    // know that our value can only have a single non-debug use, the consuming
-    // user. So if we are not in that situation, bail.
-    if (!hasOneNonDebugUse(next))
-      return false;
-
-    assert(rest.empty() || getSingleNonDebugUser(rest.back()) == next);
-    rest.push_back(next);
-    return true;
+    return false;
   }
 
-  /// Delete all forwarding uses and then RAUW front with newValue.
-  SingleValueInstruction *optimizeWithReplacement(SILValue newValue) && {
-    // NOTE: Even though after running cleanup rest, front now has its
-    // forwarding operand set to Undef, we haven't touched its result. So it is
-    // safe to RAUW.
-    cleanupRest();
-    SC.replaceValueUsesWith(front, newValue);
-    return nullptr;
+  /// Set this->front's first operand to be \p newValue.
+  void optimizeWithSetValue(SILValue newValue) && {
+    assert(newValue == prevUser->getOperand(0));
+
+    bool wasConsumed = removeConsume();
+
+    sc.getDeleter().replaceOperandAndDeleteIfDead(&front->getOperandRef(0),
+                                                  newValue);
+    assert(!wasConsumed || prevUser->isDeleted());
+
+    sc.getWorklist().add(front);
   }
 
-  /// Delete all forwarding uses and then set front's first operand to be \p
-  /// newValue.
-  SingleValueInstruction *optimizeWithSetValue(SILValue newValue) && {
-    cleanupRest();
-    assert(isa<SILUndef>(front->getOperand(0)));
-    front->setOperand(0, newValue);
-    SC.setUseValue(&front->getOperandRef(0), newValue);
-    return nullptr;
-  }
-
-private:
-  /// Processing from def->use by walking rest backwards, delete all of its
-  /// debug uses and then set its single remaining use to be SILUndef.
+  /// Replace all uses of 'this->front' with \p newValue.
   ///
-  /// This means that after this runs front's forwarding operand is now
-  /// SILUndef.
-  void cleanupRest() & {
-    // We process from def->use. This cleans up everything but the front value.
-    while (!rest.empty()) {
-      auto *inst = rest.pop_back_val();
-      deleteAllDebugUses(inst, SC.getInstModCallbacks());
-      auto *next = inst->getSingleUse();
-      assert(next);
-      assert(rest.empty() || bool(next->getUser() == rest.back()));
-      next->set(SILUndef::get(next->get()->getType(), inst->getModule()));
-      SC.eraseInstFromFunction(*inst);
-    }
+  /// Precondition: the first operand of 'prevUser' is the same as the first
+  /// operand of 'newValue'. Ownership will be transfered from 'prevUser' to
+  /// 'newValue'.
+  void optimizeWithReplacement(SingleValueInstruction *newValue) && {
+    assert(newValue->getOperand(0) == prevUser->getOperand(0));
+
+    bool wasConsumed = removeConsume();
+
+    sc.getDeleter().replaceAllUsesAndDeleteIfDead(front, newValue);
+
+    assert(!wasConsumed || prevUser->isDeleted());
+    (void)wasConsumed;
+  }
+
+protected:
+  bool removeConsume() {
+    SILValue incomingValue = prevUser->getOperand(0);
+    if (incomingValue.getOwnershipKind() != OwnershipKind::Owned)
+      return false;
+
+    // Transfer ownership by removing prevUser's consuming use.
+    prevUser->setOperand(
+        0, SILUndef::get(incomingValue->getType(), *prevUser->getFunction()));
+    return true;
   }
 };
 
@@ -209,19 +196,12 @@ SILInstruction *SILCombiner::visitUpcastInst(UpcastInst *uci) {
   //
   // If operandUpcast does not have any further uses, we delete it.
   if (auto *operandAsUpcast = dyn_cast<UpcastInst>(operand)) {
-    if (operand.getOwnershipKind() != OwnershipKind::Owned) {
-      uci->setOperand(operandAsUpcast->getOperand());
-      return operandAsUpcast->use_empty()
-                 ? eraseInstFromFunction(*operandAsUpcast)
-                 : nullptr;
-    }
-    SingleBlockOwnedForwardingInstFolder folder(*this, uci);
-    if (folder.add(operandAsUpcast)) {
-      return std::move(folder).optimizeWithSetValue(
-          operandAsUpcast->getOperand());
-    }
-  }
+    ForwardingInstFolder folder(*this, uci);
+    if (!folder.checkNextDefOwnership(operandAsUpcast))
+      return nullptr;
 
+    std::move(folder).optimizeWithSetValue(operandAsUpcast->getOperand());
+  }
   return nullptr;
 }
 
@@ -426,11 +406,12 @@ SILCombiner::visitUncheckedRefCastInst(UncheckedRefCastInst *urci) {
       return Builder.createUncheckedRefCast(urci->getLoc(), otherURCIOp,
                                             urci->getType());
     }
-    SingleBlockOwnedForwardingInstFolder folder(*this, urci);
-    if (folder.add(otherURCI)) {
+    ForwardingInstFolder folder(*this, urci);
+    if (folder.checkNextDefOwnership(otherURCI)) {
       auto *newValue = Builder.createUncheckedRefCast(
           urci->getLoc(), otherURCIOp, urci->getType());
-      return std::move(folder).optimizeWithReplacement(newValue);
+      std::move(folder).optimizeWithReplacement(newValue);
+      return nullptr;
     }
   }
 
@@ -452,11 +433,12 @@ SILCombiner::visitUncheckedRefCastInst(UncheckedRefCastInst *urci) {
                                             urci->getType());
     }
 
-    SingleBlockOwnedForwardingInstFolder folder(*this, urci);
-    if (folder.add(ui)) {
+    ForwardingInstFolder folder(*this, urci);
+    if (folder.checkNextDefOwnership(ui)) {
       auto *newValue =
           Builder.createUncheckedRefCast(urci->getLoc(), uiOp, urci->getType());
-      return std::move(folder).optimizeWithReplacement(newValue);
+      std::move(folder).optimizeWithReplacement(newValue);
+      return nullptr;
     }
   }
 
@@ -487,11 +469,13 @@ SILCombiner::visitUncheckedRefCastInst(UncheckedRefCastInst *urci) {
                                               urci->getType());
       }
 
-      SingleBlockOwnedForwardingInstFolder folder(*this, urci);
-      if (folder.add(oer) && folder.add(ier)) {
+      ForwardingInstFolder folder(*this, urci);
+      if (folder.checkNextDefOwnership(oer)
+          && folder.checkNextDefOwnership(ier)) {
         auto *newValue = Builder.createUncheckedRefCast(
             urci->getLoc(), ier->getOperand(), urci->getType());
-        return std::move(folder).optimizeWithReplacement(newValue);
+        std::move(folder).optimizeWithReplacement(newValue);
+        return nullptr;
       }
     }
   }
@@ -532,11 +516,12 @@ SILCombiner::visitBridgeObjectToRefInst(BridgeObjectToRefInst *bori) {
       return Builder.createUncheckedRefCast(
           bori->getLoc(), urc->getOperand(), bori->getType());
     }
-    SingleBlockOwnedForwardingInstFolder folder(*this, bori);
-    if (folder.add(urc)) {
+    ForwardingInstFolder folder(*this, bori);
+    if (folder.checkNextDefOwnership(urc)) {
       auto *newValue = Builder.createUncheckedRefCast(
           bori->getLoc(), urc->getOperand(), bori->getType());
-      return std::move(folder).optimizeWithReplacement(newValue);
+      std::move(folder).optimizeWithReplacement(newValue);
+      return nullptr;
     }
   }
 
@@ -1119,9 +1104,11 @@ SILCombiner::visitConvertFunctionInst(ConvertFunctionInst *cfi) {
     // eliminate the convert_function. Otherwise we may be breaking up a
     // forwarding chain in favor of additional ARC traffic which isn't
     // canonical.
-    SingleBlockOwnedForwardingInstFolder folder(*this, cfi);
-    if (folder.add(subCFI))
-      return std::move(folder).optimizeWithSetValue(subCFI->getConverted());
+    ForwardingInstFolder folder(*this, cfi);
+    if (folder.checkNextDefOwnership(subCFI)) {
+      std::move(folder).optimizeWithSetValue(subCFI->getConverted());
+      return nullptr;
+    }
   }
 
   // Replace a convert_function that only has refcounting uses with its
