@@ -243,6 +243,9 @@ splitAggregateLoad(LoadOperation loadInst, CanonicalizeInstruction &pass) {
   //   }
   // }
   //
+  // Also, avoid degrading debug info unless it is necessary for exclusivity
+  // diagnostics.
+  //
   // TODO: This logic subtly anticipates SILGen behavior. In the future, change
   // SILGen to avoid emitting the full load and never delete loads in Raw SIL.
   if (projections.empty() && loadInst->getModule().getStage() == SILStage::Raw)
@@ -294,6 +297,17 @@ splitAggregateLoad(LoadOperation loadInst, CanonicalizeInstruction &pass) {
     }
     pass.notifyNewInstruction(**lastNewLoad);
 
+    // If the debug_values for the original load will be deleted, then recover
+    // as much debug info as possible by creating debug_value fragments for each
+    // new partial load.
+    //
+    // FIXME: This drops debug info at -Onone because debug fragments are only
+    // supported at -O, and load-splitting is required at -Onone for exclusivity
+    // diagnostics. One possible fix would be to opt-out of shadow stack
+    // variable in this case and use debug fragments instead.
+    if (!pass.preserveDebugInfo) {
+      createDebugFragments(*loadInst, proj, lastNewLoad->getLoadInst());
+    }
     if (loadOwnership) {
       if (*loadOwnership == LoadOwnershipQualifier::Copy) {
         // Destroy the loaded value wherever the aggregate load was destroyed.
@@ -301,7 +315,7 @@ splitAggregateLoad(LoadOperation loadInst, CanonicalizeInstruction &pass) {
                LoadOwnershipQualifier::Copy);
         for (SILInstruction *destroy : lifetimeEndingInsts) {
           auto *newInst = SILBuilderWithScope(destroy).createDestroyValue(
-              destroy->getLoc(), **lastNewLoad);
+              destroy->getLoc(), lastNewLoad->getLoadInst());
           pass.notifyNewInstruction(newInst);
         }
       }
@@ -324,6 +338,14 @@ splitAggregateLoad(LoadOperation loadInst, CanonicalizeInstruction &pass) {
   for (auto *destroy : lifetimeEndingInsts)
     nextII = killInstruction(destroy, nextII, pass);
 
+  // FIXME: remove this temporary hack to advance the iterator beyond
+  // debug_value. A soon-to-be merged commit migrates CanonicalizeInstruction to
+  // use InstructionDeleter.
+  while (nextII != loadInst->getParent()->end()
+         && nextII->isDebugInstruction()) {
+    ++nextII;
+  }
+  deleteAllDebugUses(*loadInst, pass.getCallbacks());
   return killInstAndIncidentalUses(*loadInst, nextII, pass);
 }
 
@@ -523,7 +545,6 @@ CanonicalizeInstruction::canonicalize(SILInstruction *inst) {
   if (auto li = LoadOperation(inst)) {
     return splitAggregateLoad(li, *this);
   }
-
   if (auto *storeInst = dyn_cast<StoreInst>(inst)) {
     return broadenSingleElementStores(storeInst, *this);
   }
