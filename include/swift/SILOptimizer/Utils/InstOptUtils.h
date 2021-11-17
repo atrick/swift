@@ -136,6 +136,27 @@ void collectUsesOfValue(SILValue V,
 /// value itself)
 void eraseUsesOfValue(SILValue value);
 
+/// Fix OSSA lifetime before dropping \p operand.
+///
+/// Return the new destroy_value or end_borrow, or nullptr.
+SILInstruction *dropOSSAOperand(Operand *operand);
+
+/// Fix OSSA lifetime for lifetime-ending operands before dropping all operands
+/// of \p inst.
+///
+/// Invoke callbacks.createdNewInst for any new destroy_values or end_borrows.
+void dropOSSAOperands(SILInstruction *inst, InstModCallbacks &callbacks);
+
+/// Fix OSSA lifetime before replacing \p operand with \p newValue.
+///
+/// Skip replacement if \p operand is used by a scope-ending instruction.
+///
+/// Return the new destroy_value or end_borrow, or nullptr.
+///
+/// The caller must ensure the OSSA lifetime of \p newValue will be valid after
+/// replacement.
+SILInstruction *replaceOSSAOperand(Operand *operand, SILValue newValue);
+
 /// Gets the concrete value which is stored in an existential box.
 /// Returns %value in following pattern:
 ///

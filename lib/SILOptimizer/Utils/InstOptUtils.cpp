@@ -278,6 +278,56 @@ void swift::eraseUsesOfValue(SILValue v) {
   }
 }
 
+/// Fix OSSA lifetime before the caller drops or replaces \p operand.
+///
+/// Return the new destroy_value or end_borrow or nullptr.
+static SILInstruction *prepareToRemoveOSSAOperand(Operand *operand) {
+  if (!operand->isLifetimeEnding()) {
+    return nullptr;
+  }
+
+  SILValue operandValue = operand->get();
+  auto *user = operand->getUser();
+
+  SILBuilderWithScope builder(user);
+  if (operandValue.getOwnershipKind() == OwnershipKind::Owned) {
+    return builder.createDestroyValue(user->getLoc(), operandValue);
+  } else {
+    assert(operandValue.getOwnershipKind() == OwnershipKind::Guaranteed);
+    return builder.createEndBorrow(user->getLoc(), operandValue);
+  }
+}
+
+SILInstruction *swift::dropOSSAOperand(Operand *operand) {
+  auto *newInst = prepareToRemoveOSSAOperand(operand);
+  operand->drop();
+  return newInst;
+}
+
+void swift::dropOSSAOperands(SILInstruction *inst,
+                             InstModCallbacks &callbacks) {
+  for (Operand &operand : inst->getAllOperands()) {
+    if (auto *newInst = dropOSSAOperand(&operand)) {
+      callbacks.createdNewInst(newInst);
+    }
+  }
+}
+
+SILInstruction *swift::replaceOSSAOperand(Operand *operand, SILValue newValue) {
+  auto oldValue = operand->get();
+  assert(oldValue != newValue && "Cannot replace a value with itself");
+
+  auto *user = operand->getUser();
+
+  // If we have an end of scope marker, just return next. We are done.
+  if (isEndOfScopeMarker(user))
+    return nullptr;
+
+  auto *newInst = prepareToRemoveOSSAOperand(operand);
+  operand->set(newValue);
+  return newInst;
+}
+
 SILValue swift::
 getConcreteValueOfExistentialBox(AllocExistentialBoxInst *existentialBox,
                                   SILInstruction *ignoreUser) {
