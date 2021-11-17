@@ -1836,6 +1836,7 @@ bool swift::tryEliminateOnlyOwnershipUsedForwardingInst(
   // Now that we know we can perform our transform, set all uses of
   // forwardingInst to be used of its operand and then delete \p forwardingInst.
   auto newValue = forwardingInst->getOperand(0);
+  callbacks.notifyWillReplaceUses(forwardingInst, newValue);
   while (!forwardingInst->use_empty()) {
     auto *use = *(forwardingInst->use_begin());
     use->set(newValue);
