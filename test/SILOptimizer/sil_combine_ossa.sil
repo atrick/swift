@@ -34,6 +34,11 @@ struct PointerStorage {
   var ptr: FakeOptional<Builtin.NativeObject>
 }
 
+struct PointerStorage2 {
+  var ptr1: FakeOptional<Builtin.NativeObject>
+  var ptr2: FakeOptional<Builtin.NativeObject>
+}
+
 class B { }
 class E : B { }
 
@@ -76,6 +81,11 @@ class MyContiguousArrayStorage {
 struct MyContiguousArray {
   @_hasStorage var storage: MyContiguousArrayStorage { get set }
   init(storage: MyContiguousArrayStorage)
+}
+
+struct ObjectPair {
+  @_hasStorage var o1 : Builtin.NativeObject
+  @_hasStorage var o2 : Builtin.NativeObject
 }
 
 sil [global_init] @global_init_fun : $@convention(thin) () -> Builtin.RawPointer
@@ -5220,6 +5230,25 @@ bb0(%0 : @owned $Klass, %1 : $Builtin.Word):
   return %11 : $AnyObject
 }
 
+// Test that DCE during SILCombine does not remove traps.
+// Tests isReadOnlyConstantEvaluable().
+sil hidden [noinline] [_semantics "programtermination_point"] @trapWrapper : $@convention(thin) () -> () {
+bb0:
+  %0 = builtin "int_trap"() : $Never
+  unreachable
+}
+
+// CHECK-LABEL: sil [ossa] @testTrap : $@convention(thin) () -> () {
+// CHECK: apply
+// CHECK-LABEL: } // end sil function 'testTrap'
+sil [ossa] @testTrap : $@convention(thin) () -> () {
+bb0:
+  %0 = function_ref @trapWrapper : $@convention(thin) () -> ()
+  %1 = apply %0() : $@convention(thin) () -> ()
+  %2 = tuple ()
+  return %2 : $()
+}
+
 // CanonicalizeInstruction simplifies 'enum->struct->struct_extract'
 // to 'enum'. Verify that the subsequent OSSA replacement works. This
 // exercises findOwnershipReferenceAggregate for
@@ -5329,23 +5358,4 @@ bb0(%0 : @owned $Builtin.NativeObject, %1 : @owned $Builtin.NativeObject):
   destroy_value %56 : $Builtin.NativeObject
   destroy_value %57 : $Builtin.NativeObject
   return undef : $()
-}
-
-// Test that DCE during SILCombine does not remove traps.
-// Tests isReadOnlyConstantEvaluable().
-sil hidden [noinline] [_semantics "programtermination_point"] @trapWrapper : $@convention(thin) () -> () {
-bb0:
-  %0 = builtin "int_trap"() : $Never
-  unreachable
-}
-
-// CHECK-LABEL: sil [ossa] @testTrap : $@convention(thin) () -> () {
-// CHECK: apply
-// CHECK-LABEL: } // end sil function 'testTrap'
-sil [ossa] @testTrap : $@convention(thin) () -> () {
-bb0:
-  %0 = function_ref @trapWrapper : $@convention(thin) () -> ()
-  %1 = apply %0() : $@convention(thin) () -> ()
-  %2 = tuple ()
-  return %2 : $()
 }
