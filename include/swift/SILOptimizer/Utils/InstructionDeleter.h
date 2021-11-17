@@ -29,19 +29,27 @@
 ///
 /// Strategies for SIL transformation:
 ///
-/// 1. Defer deletion until the end of the pass/sub-pass. This is the simplest
-/// strategy. Use it when possible. Use InstructionDeleter::trackIfDead() to
-/// record instructions that may be the root of a dead use-def graph after
-/// transformation. Use InstructionDeleter::cleanupDeadInstructions().
+/// 1. Perform instruction modification that may introduce dead code using the
+/// InstructionDeleter's high-level API. Such as
+/// replaceOperandAndDeleteIfDead. This API:
+/// 
+///   - leaves OSSA or non-OSSA SIL in a valid state
+/// 
+///   - efficiently fixes OSSA lifetime during dead code elimination
 ///
-/// 2. For algorithms that delete instructions with side effects or require some
+/// 2. Defer deletion until the end of the pass/sub-pass. Use
+/// InstructionDeleter::trackIfDead() to record instructions that may be the
+/// root of a dead use-def graph after transformation. Use
+/// InstructionDeleter::cleanupDeadInstructions().
+///
+/// 3. For algorithms that delete instructions with side effects or require some
 /// instructions and operands to be removed from the instruction list or use
 /// list incrementally... Use InstructionDeleter::forceDeleteAndFixLifetimes()
-/// This erases instructions even, if they have side-effects, and it leaves OSSA
+/// This erases instructions, even if they have side-effects, and it leaves OSSA
 /// in a valid state. This automatically tracks newly exposed dead code. Use
 /// InstructionDeleter::cleanupDeadInstructions() at the end of the pass.
 ///
-/// 3. For algorithms that benefit from incremental dead code elimination
+/// 4. For algorithms that benefit from incremental dead code elimination
 /// because eliminating dead code may expose more optimization incrementally...
 /// Use InstructionDeleter::forceDeleteAndFixLifetimes() as in case #2, but
 /// simply invoke InstructionDeleter::cleanupDeadInstructions() whenever it is
@@ -109,6 +117,7 @@ namespace swift {
 ///   deleter.deleteIfDead(instruction);
 ///   deleter.cleanupDeadInstructions();
 ///
+/// TODO: Add tracing based on the client's DEBUG_TYPE (e.g. sil-combine).
 class InstructionDeleter {
   /// A set vector of instructions that are found to be dead. The ordering of
   /// instructions in this set is important as when a dead instruction is
@@ -140,6 +149,10 @@ public:
     return iteratorRegistry.makeReverseIteratorRange(bb);
   }
 
+  UpdatingInstructionIterator makeIterator(SILInstruction *inst) {
+    return iteratorRegistry.makeIterator(inst);
+  }
+
   bool hadCallbackInvocation() const {
     return const_cast<InstructionDeleter *>(this)
         ->getCallbacks()
@@ -149,6 +162,40 @@ public:
   void resetHadCallbackInvocation() {
     getCallbacks().resetHadCallbackInvocation();
   }
+
+  // --------------------------------------------------------------------------
+  // High-level API
+  //
+  // Gradually introduce APIs for general instruction modification and
+  // deletion, then reduce the detailed API surface.
+  //
+  // These methods aways do the right thing in both OSSA and non-OSSA
+  // mode. Leaving SIL in a valid state.
+  //
+  // These methods combine instruction modification with cleanup to avoid
+  // generating useless OSSA lifetime-fixup instructions.
+
+  /// Replace \p oldValue with \p newValue and immediately recursively delete
+  /// dead code. Leave OSSA or non-OSSA SIL in a valid state.
+  ///
+  /// Invoke callbacks.createdNewInst if any destroy_value was created.
+  ///
+  /// Return true and invoke callbacks.deleteInst() if dead code was deleted.
+  bool replaceAllUsesAndDeleteIfDead(SILValue oldValue, SILValue newValue);
+
+  /// Replace operand with \p newValue and immediately recursively delete dead
+  /// code. Leave OSSA or non-OSSA SIL in a valid state.
+  ///
+  /// Invoke callbacks.createdNewInst if any destroy_value was created.
+  ///
+  /// Return true and invoke callbacks.deleteInst() if dead code was deleted.
+  bool replaceOperandAndDeleteIfDead(Operand *operand, SILValue newValue);
+
+  // --------------------------------------------------------------------------
+  // Detailed API: provides control over each deletion step.
+
+  /// Return true if \p inst is dead.
+  bool isDead(SILInstruction *inst);
 
   /// If the instruction \p inst is dead, record it so that it can be cleaned
   /// up.
@@ -239,8 +286,13 @@ public:
   void recursivelyForceDeleteUsersAndFixLifetimes(SILInstruction *inst);
 
 private:
-  void deleteWithUses(SILInstruction *inst, bool fixLifetimes,
-                      bool forceDeleteUsers = false);
+  void
+  deleteWithUses(SILInstruction *inst, bool fixLifetimes,
+                 bool forceDeleteUsers = false,
+                 SmallVectorImpl<SILInstruction *> *deadOperands = nullptr);
+
+  void deleteWithUsesAndCleanup(SILInstruction *inst, bool fixLifetimes,
+                                bool forceDeleteUsers = false);
 };
 
 } // namespace swift
