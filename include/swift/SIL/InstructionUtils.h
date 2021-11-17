@@ -106,12 +106,55 @@ SingleValueInstruction *getSingleValueCopyOrCast(SILInstruction *I);
 /// instructions do not produce a result.
 bool isEndOfScopeMarker(SILInstruction *user);
 
-/// Return true if the given instruction has no effect on it's operand values
-/// and produces no result. These are typically end-of scope markers.
+/// Return true if the given instruction:
+/// - does not keep its operands alive
+/// - does not escape its operand values
+/// - produces no result
+/// - does not effect the operand value
+/// - has no side-effects
 ///
-/// This is useful for checking all users of a value to verify that the value is
-/// only used in recognizable patterns without otherwise "escaping".
+/// These are typically end-of scope markers and unnecessary debug information.
+///
+/// \p preserveDebugInfo is a function of the optimization mode, not a function
+/// of the SIL stage or pipeline stage. At -Onone, debug info must be
+/// preserved. At -O, debug info may not affect non-debug compiler output.
+///
+/// If this is true of all instruction uses, calling
+/// InstructionDeleter::forceDelete on that instruction is safe.
+bool isIncidentalUse(SILInstruction *user, bool preserveDebugInfo);
+
+/// Wrapper around 'isIncidentalUse(user, preserveDebugInfo)' that infers
+/// preserveDebugInfo from the module's optimization mode.
 bool isIncidentalUse(SILInstruction *user);
+
+/// Return true if the given instruction:
+/// - does not keep its operands alive
+/// - does not escape its operand values
+/// - produces no result
+/// - has no side-effects independent from the effect on the operand value
+///
+/// Includes isIncidentalUse and destroy_value. A destroy_value has side effects
+/// in that a deinit can clobber memory. However it's side effects are not
+/// observable apart from marking the end of its operand's lifetime, and
+/// it does not keep its operand alive. Note that destroy_addr and
+/// strong_release are not incidental uses because their side effects are
+/// observable by any aliasing operation.
+///
+/// This must be true of all instruction uses before calling
+/// InstructionDeleter::forceDelete on that instruction.
+bool isIncidentalOrLifetimeEndingUse(SILInstruction *user);
+
+/// True if isIncidentalUse is true for all this instruction's uses.
+///
+/// If this returns true, then it is valid to call
+/// InstructionDeleter::forceDelete(inst).
+bool hasOnlyIncidentalUses(SILInstruction *inst);
+
+/// True if isIncidentalUse is true for all this instruction's uses.
+///
+/// If this returns true, then it is valid to call
+/// InstructionDeleter::forceDelete(inst).
+bool hasOnlyIncidentalOrLifetimeEndingUses(SILInstruction *inst);
 
 /// Return true if the given `user` instruction modifies the value's refcount
 /// without propagating the value or having any other effect aside from

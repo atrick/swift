@@ -211,27 +211,6 @@ bool swift::isIntermediateRelease(SILInstruction *inst,
   return false;
 }
 
-bool swift::hasOnlyEndOfScopeOrEndOfLifetimeUses(SILInstruction *inst) {
-  for (SILValue result : inst->getResults()) {
-    for (Operand *use : result->getUses()) {
-      SILInstruction *user = use->getUser();
-      bool isDebugUser = user->isDebugInstruction();
-      if (!isa<DestroyValueInst>(user) && !isa<EndLifetimeInst>(user) &&
-          !isEndOfScopeMarker(user) && !isDebugUser)
-        return false;
-      // Include debug uses only in Onone mode.
-      if (isDebugUser && inst->getFunction()->getEffectiveOptimizationMode() <=
-                             OptimizationMode::NoOptimization)
-        if (auto DbgVarInst = DebugVarCarryingInst(user)) {
-          auto VarInfo = DbgVarInst.getVarInfo();
-          if (VarInfo && !VarInfo->Implicit)
-            return false;
-        }
-    }
-  }
-  return true;
-}
-
 unsigned swift::getNumInOutArguments(FullApplySite applySite) {
   assert(applySite);
   auto substConv = applySite.getSubstCalleeConv();
