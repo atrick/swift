@@ -118,6 +118,13 @@ void recursivelyDeleteTriviallyDeadInstructions(
 /// True if this instruction can be deleted if all its uses can also be deleted.
 bool isInstructionTriviallyDeletable(SILInstruction *inst);
 
+/// Return the single remaining use of this instruction if the instruction will
+/// be trivially dead after removing this use.
+///
+/// Useful to avoid fixing up OSSA lifetimes for instructions that will be
+/// immediately deleted.
+Operand *getSingleLiveUse(SILInstruction *inst);
+
 /// Perform a fast local check to see if the instruction is dead.
 ///
 /// This routine only examines the state of the instruction at hand.

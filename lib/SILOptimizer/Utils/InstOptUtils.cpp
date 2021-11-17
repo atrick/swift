@@ -126,18 +126,8 @@ static bool isOSSAEndScopeWithNoneOperand(SILInstruction *i) {
   return i->getOperand(0).getOwnershipKind() == OwnershipKind::None;
 }
 
-/// Perform a fast local check to see if the instruction is dead.
-///
-/// This routine only examines the state of the instruction at hand.
-bool swift::isInstructionTriviallyDead(SILInstruction *inst) {
-  // At Onone, consider all uses, including the debug_info.
-  // This way, debug_info is preserved at Onone.
-  if (inst->hasUsesOfAnyResult()
-      && inst->getFunction()->getEffectiveOptimizationMode()
-             <= OptimizationMode::NoOptimization)
-    return false;
-
-  if (!onlyHaveDebugUsesOfAllResults(inst) || isa<TermInst>(inst))
+static bool isInstructionDeadIgnoringUses(SILInstruction *inst) {
+  if (isa<TermInst>(inst))
     return false;
 
   if (auto *bi = dyn_cast<BuiltinInst>(inst)) {
@@ -179,6 +169,45 @@ bool swift::isInstructionTriviallyDead(SILInstruction *inst) {
     return true;
 
   return false;
+}
+
+/// Perform a fast local check to see if the instruction is dead.
+///
+/// This routine only examines the state of the instruction at hand.
+bool swift::isInstructionTriviallyDead(SILInstruction *inst) {
+  // At Onone, consider all uses, including the debug_info.
+  // This way, debug_info is preserved at Onone.
+  if (inst->hasUsesOfAnyResult()
+      && inst->getFunction()->getEffectiveOptimizationMode()
+             <= OptimizationMode::NoOptimization)
+    return false;
+
+  if (!onlyHaveDebugUsesOfAllResults(inst))
+    return false;
+
+  return isInstructionDeadIgnoringUses(inst);
+}
+
+Operand *swift::getSingleLiveUse(SILInstruction *inst) {
+  // At Onone, debug information keeps instructions alive.
+  bool checkDebugUses = (inst->getFunction()->getEffectiveOptimizationMode()
+                         <= OptimizationMode::NoOptimization);
+  Operand *singleUse = nullptr;
+  for (auto result : inst->getResults()) {
+    for (Operand *use : result->getUses()) {
+      if (!checkDebugUses && use->getUser()->isDebugInstruction())
+        continue;
+
+      if (singleUse)
+        return nullptr;
+
+      singleUse = use;
+    }
+  }
+  if (!isInstructionDeadIgnoringUses(inst))
+    return nullptr;
+
+  return singleUse;
 }
 
 /// Return true if this is a release instruction and the released value
