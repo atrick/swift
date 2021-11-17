@@ -68,10 +68,6 @@ NullablePtr<SILInstruction> createDecrementBefore(SILValue ptr,
 /// Get the insertion point after \p val.
 Optional<SILBasicBlock::iterator> getInsertAfterPoint(SILValue val);
 
-/// True if this instruction's only uses are debug_value (in -O mode),
-/// destroy_value, end_lifetime or end-of-scope instruction such as end_borrow.
-bool hasOnlyEndOfScopeOrEndOfLifetimeUses(SILInstruction *inst);
-
 /// Return the number of @inout arguments passed to the given apply site.
 unsigned getNumInOutArguments(FullApplySite applySite);
 

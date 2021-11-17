@@ -282,9 +282,61 @@ bool swift::isEndOfScopeMarker(SILInstruction *user) {
   }
 }
 
+// Anything that does not keep the incoming value alive.
+//
+// In OSSA, a destroy_value has no side effects, so does not keep it's value
+// alive. This is *not* true for release_value or fix_lifetime.
+bool swift::isIncidentalUse(SILInstruction *user, bool preserveDebugInfo) {
+  switch (user->getKind()) {
+  default:
+    return false;
+  case SILInstructionKind::DebugValueInst:
+    if (preserveDebugInfo) {
+      if (auto VarInfo = cast<DebugValueInst>(user)->getVarInfo()) {
+        return VarInfo->Implicit;
+      }
+    }
+    return true;
+  case SILInstructionKind::DestroyValueInst:
+  case SILInstructionKind::EndAccessInst:
+  case SILInstructionKind::EndBorrowInst:
+  case SILInstructionKind::EndLifetimeInst:
+    return true;
+  }
+}
+
 bool swift::isIncidentalUse(SILInstruction *user) {
-  return isEndOfScopeMarker(user) || user->isDebugInstruction() ||
-         isa<FixLifetimeInst>(user) || isa<EndLifetimeInst>(user);
+  bool preserveDebugInfo = (user->getFunction()->getEffectiveOptimizationMode()
+                            <= OptimizationMode::NoOptimization);
+
+  return isIncidentalUse(user, preserveDebugInfo);
+}
+
+bool swift::isIncidentalOrLifetimeEndingUse(SILInstruction *user) {
+  if (isa<DestroyValueInst>(user))
+    return true;
+
+  return isIncidentalUse(user);
+}
+
+bool swift::hasOnlyIncidentalUses(SILInstruction *inst) {
+  for (SILValue result : inst->getResults()) {
+    for (Operand *use : result->getUses()) {
+      if (!isIncidentalUse(use->getUser()))
+        return false;
+    }
+  }
+  return true;
+}
+
+bool swift::hasOnlyIncidentalOrLifetimeEndingUses(SILInstruction *inst) {
+  for (SILValue result : inst->getResults()) {
+    for (Operand *use : result->getUses()) {
+      if (!isIncidentalOrLifetimeEndingUse(use->getUser()))
+        return false;
+    }
+  }
+  return true;
 }
 
 bool swift::onlyAffectsRefCount(SILInstruction *user) {

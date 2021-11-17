@@ -2661,13 +2661,10 @@ void swift::trySpecializeApplyOfGeneric(
         llvm::copy(cvi->getUses(), std::back_inserter(worklist));
         continue;
       }
-      // Ignore destroy_value.
-      if (isa<DestroyValueInst>(User))
-        continue;
       // Ignore older ref count instructions.
       if (isa<RefCountingInst>(User))
         continue;
-      if (isIncidentalUse(User))
+      if (isIncidentalOrLifetimeEndingUse(User))
         continue;
 
       auto FAS = FullApplySite::isa(User);

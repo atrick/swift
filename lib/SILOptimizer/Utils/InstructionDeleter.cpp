@@ -18,6 +18,9 @@
 
 using namespace swift;
 
+/// FIXME: In a parallel PR, this function is replaced with
+/// isReadOnlyConstantEvaluableCall();
+///
 /// Return true iff the \p applySite calls a constant-evaluable function and
 /// it is non-generic and read/destroy only, which means that the call can do
 /// only the following and nothing else:
@@ -38,20 +41,6 @@ static bool isNonGenericReadOnlyConstantEvaluableCall(FullApplySite applySite) {
   }
   return !applySite.hasSubstitutions() && !getNumInOutArguments(applySite) &&
          !applySite.getNumIndirectSILResults();
-}
-
-static bool hasOnlyIncidentalUses(SILInstruction *inst,
-                                  bool disallowDebugUses = false) {
-  for (SILValue result : inst->getResults()) {
-    for (Operand *use : result->getUses()) {
-      SILInstruction *user = use->getUser();
-      if (!isIncidentalUse(user))
-        return false;
-      if (disallowDebugUses && user->isDebugInstruction())
-        return false;
-    }
-  }
-  return true;
 }
 
 /// A scope-affecting instruction is an instruction which may end the scope of
@@ -79,7 +68,7 @@ static bool isScopeAffectingInstructionDead(SILInstruction *inst,
   }
   // If the instruction has any use other than end of scope use or destroy_value
   // use, bail out.
-  if (!hasOnlyEndOfScopeOrEndOfLifetimeUses(inst)) {
+  if (!hasOnlyIncidentalOrLifetimeEndingUses(inst)) {
     return false;
   }
   // If inst is a copy or beginning of scope, inst is dead, since we know that
@@ -172,9 +161,9 @@ bool InstructionDeleter::trackIfDead(SILInstruction *inst) {
   bool fixLifetime = inst->getFunction()->hasOwnership();
   if (isInstructionTriviallyDead(inst)
       || isScopeAffectingInstructionDead(inst, fixLifetime)) {
-    assert(!isIncidentalUse(inst) && !isa<DestroyValueInst>(inst) &&
-           "Incidental uses cannot be removed in isolation. "
-           "They would be removed iff the operand is dead");
+    assert(!isIncidentalOrLifetimeEndingUse(inst)
+           && "Incidental uses cannot be removed in isolation. "
+              "They would be removed iff the operand is dead");
     getCallbacks().notifyWillBeDeleted(inst);
     deadInstructions.insert(inst);
     return true;
@@ -183,9 +172,7 @@ bool InstructionDeleter::trackIfDead(SILInstruction *inst) {
 }
 
 void InstructionDeleter::forceTrackAsDead(SILInstruction *inst) {
-  bool disallowDebugUses = inst->getFunction()->getEffectiveOptimizationMode()
-                           <= OptimizationMode::NoOptimization;
-  assert(hasOnlyIncidentalUses(inst, disallowDebugUses));
+  assert(hasOnlyIncidentalOrLifetimeEndingUses(inst));
   getCallbacks().notifyWillBeDeleted(inst);
   deadInstructions.insert(inst);
 }
@@ -227,8 +214,7 @@ void InstructionDeleter::deleteWithUses(SILInstruction *inst, bool fixLifetimes,
       auto uses = llvm::to_vector<4>(result->getUses());
       for (Operand *use : uses) {
         SILInstruction *user = use->getUser();
-        assert(forceDeleteUsers || isIncidentalUse(user) ||
-               isa<DestroyValueInst>(user));
+        assert(forceDeleteUsers || isIncidentalOrLifetimeEndingUse(user));
         assert(!isa<BranchInst>(user) && "can't delete phis");
 
         toDeleteInsts.push_back(user);
@@ -295,18 +281,12 @@ bool InstructionDeleter::deleteIfDead(SILInstruction *inst) {
 }
 
 void InstructionDeleter::forceDeleteAndFixLifetimes(SILInstruction *inst) {
-  SILFunction *fun = inst->getFunction();
-  bool disallowDebugUses =
-      fun->getEffectiveOptimizationMode() <= OptimizationMode::NoOptimization;
-  assert(hasOnlyIncidentalUses(inst, disallowDebugUses));
-  deleteWithUses(inst, /*fixLifetimes*/ fun->hasOwnership());
+  assert(hasOnlyIncidentalOrLifetimeEndingUses(inst));
+  deleteWithUses(inst, /*fixLifetimes*/ inst->getFunction()->hasOwnership());
 }
 
 void InstructionDeleter::forceDelete(SILInstruction *inst) {
-  bool disallowDebugUses =
-      inst->getFunction()->getEffectiveOptimizationMode() <=
-      OptimizationMode::NoOptimization;
-  assert(hasOnlyIncidentalUses(inst, disallowDebugUses));
+  assert(hasOnlyIncidentalOrLifetimeEndingUses(inst));
   deleteWithUses(inst, /*fixLifetimes*/ false);
 }
 
@@ -329,7 +309,7 @@ void InstructionDeleter::recursivelyForceDeleteUsersAndFixLifetimes(
       recursivelyForceDeleteUsersAndFixLifetimes(user);
     }
   }
-  if (isIncidentalUse(inst) || isa<DestroyValueInst>(inst)) {
+  if (isIncidentalOrLifetimeEndingUse(inst)) {
     forceDelete(inst);
     return;
   }
