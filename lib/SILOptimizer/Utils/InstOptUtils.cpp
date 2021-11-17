@@ -1168,7 +1168,7 @@ bool swift::tryDeleteDeadClosure(SingleValueInstruction *closure,
 
 bool swift::simplifyUsers(SingleValueInstruction *inst) {
   bool changed = false;
-  InstModCallbacks callbacks;
+  InstructionDeleter deleter;
 
   for (auto ui = inst->use_begin(), ue = inst->use_end(); ui != ue;) {
     SILInstruction *user = ui->getUser();
