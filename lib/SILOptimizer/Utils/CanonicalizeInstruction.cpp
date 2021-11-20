@@ -435,8 +435,11 @@ eliminateSimpleCopies(CopyValueInst *cvi, CanonicalizeInstruction &pass) {
     next = killInstruction(destroys.pop_back_val(), next, pass);
   }
 
-  next = killInstAndIncidentalUses(cvi, next, pass);
-  return next;
+  // Replace all the debug uses.
+  auto src = cvi->getOperand();
+  cvi->replaceAllUsesWith(src);
+
+  return killInstruction(cvi, next, pass);
 }
 
 /// Unlike dead copy elimination, dead borrows can be safely removed because the
@@ -534,8 +537,11 @@ CanonicalizeInstruction::canonicalize(SILInstruction *inst) {
   // If we have ownership and are not in raw SIL, eliminate unneeded forwarding
   // insts. We don't do this in raw SIL as not to disturb the codegen read by
   // diagnostics.
+  //
+  // TODO: fix tryEliminateUnneededForwardingInst to handle debug uses.
   auto *fn = inst->getFunction();
-  if (fn->hasOwnership() && fn->getModule().getStage() != SILStage::Raw) {
+  if (!preserveDebugInfo && fn->hasOwnership()
+      && fn->getModule().getStage() != SILStage::Raw) {
     if (OwnershipForwardingMixin::isa(inst))
       if (auto newNext = tryEliminateUnneededForwardingInst(inst, *this))
         return *newNext;
