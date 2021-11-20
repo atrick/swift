@@ -1,8 +1,6 @@
 // RUN: %target-swift-frontend -enforce-exclusivity=checked -swift-version 4 -emit-sil -primary-file %s -o /dev/null -verify
 // RUN: %target-swift-frontend -enforce-exclusivity=checked -swift-version 4 -emit-sil -primary-file %s -o /dev/null -verify
 
-import Swift
-
 func takesTwoInouts<T>(_ p1: inout T, _ p2: inout T) { }
 
 func simpleInoutDiagnostic() {
@@ -642,9 +640,9 @@ struct DisjointLet {
   }
 
   mutating func testDisjointLet() -> Int {
-    // Access to inout `self` for member .cache`.
+    // Access to inout `self` for member .cache.
     return cache.get {
-      // Access to captured `self` for member .cache`.
+      // Access to captured `self` for members .a and .b.
       a + b.x
     }
   }
