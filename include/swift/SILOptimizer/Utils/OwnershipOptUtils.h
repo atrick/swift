@@ -75,8 +75,8 @@ bool createBorrowScopeForPhiOperands(SILPhiArgument *newPhi);
 
 SILValue
 makeGuaranteedValueAvailable(SILValue value, SILInstruction *user,
-                             DeadEndBlocks &deBlocks,
-                             InstModCallbacks callbacks = InstModCallbacks());
+                             InstructionDeleter &deleter,
+                             DeadEndBlocks &deBlocks);
 
 //===----------------------------------------------------------------------===//
 //                        GuaranteedOwnershipExtension

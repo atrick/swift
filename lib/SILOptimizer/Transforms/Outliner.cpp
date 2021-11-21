@@ -121,14 +121,14 @@ namespace {
 class OutlinePattern {
 protected:
   SILOptFunctionBuilder &FuncBuilder;
-  InstModCallbacks callbacks;
+  InstructionDeleter &deleter;
   DeadEndBlocks *deBlocks;
 
 public:
   OutlinePattern(SILOptFunctionBuilder &FuncBuilder,
-                 InstModCallbacks callbacks,
+                 InstructionDeleter &deleter,
                  DeadEndBlocks *deBlocks)
-      : FuncBuilder(FuncBuilder), callbacks(callbacks), deBlocks(deBlocks) {}
+      : FuncBuilder(FuncBuilder), deleter(deleter), deBlocks(deBlocks) {}
 
   /// Match the instruction sequence.
   virtual bool matchInstSequence(SILBasicBlock::iterator I) = 0;
@@ -242,9 +242,9 @@ public:
   outline(SILModule &M) override;
 
   BridgedProperty(SILOptFunctionBuilder &FuncBuilder,
-                  InstModCallbacks callbacks,
+                  InstructionDeleter &deleter,
                   DeadEndBlocks *deBlocks)
-      : OutlinePattern(FuncBuilder, callbacks, deBlocks) {
+      : OutlinePattern(FuncBuilder, deleter, deBlocks) {
     clearState();
   }
 
@@ -1012,9 +1012,9 @@ public:
   outline(SILModule &M) override;
 
   ObjCMethodCall(SILOptFunctionBuilder &FuncBuilder,
-                 InstModCallbacks callbacks,
+                 InstructionDeleter &deleter,
                  DeadEndBlocks *deBlocks)
-      : OutlinePattern(FuncBuilder, callbacks, deBlocks), BridgedReturn(deBlocks) {}
+      : OutlinePattern(FuncBuilder, deleter, deBlocks), BridgedReturn(deBlocks) {}
   ~ObjCMethodCall();
 
 private:
@@ -1067,7 +1067,7 @@ ObjCMethodCall::outline(SILModule &M) {
         auto bridgedArgValue = BridgedArguments[BridgedArgIdx].bridgedValue();
         if (bridgedArgValue.getOwnershipKind() == OwnershipKind::Guaranteed) {
           bridgedArgValue = makeGuaranteedValueAvailable(
-              bridgedArgValue, BridgedCall, *deBlocks);
+            bridgedArgValue, BridgedCall, deleter, *deBlocks);
         }
         Args.push_back(bridgedArgValue);
         ++BridgedArgIdx;
@@ -1290,10 +1290,10 @@ public:
   }
 
   OutlinePatterns(SILOptFunctionBuilder &FuncBuilder,
-                  InstModCallbacks callbacks,
+                  InstructionDeleter &deleter,
                   DeadEndBlocks *deBlocks)
-      : BridgedPropertyPattern(FuncBuilder, callbacks, deBlocks),
-        ObjCMethodCallPattern(FuncBuilder, callbacks, deBlocks) {}
+      : BridgedPropertyPattern(FuncBuilder, deleter, deBlocks),
+        ObjCMethodCallPattern(FuncBuilder, deleter, deBlocks) {}
   ~OutlinePatterns() {}
 
   OutlinePatterns(const OutlinePatterns&) = delete;
@@ -1306,10 +1306,10 @@ public:
 /// functions.
 bool tryOutline(SILOptFunctionBuilder &FuncBuilder, SILFunction *Fun,
                 SmallVectorImpl<SILFunction *> &FunctionsAdded,
-                InstModCallbacks callbacks = InstModCallbacks(),
+                InstructionDeleter &deleter,
                 DeadEndBlocks *deBlocks = nullptr) {
   BasicBlockWorklist Worklist(Fun->getEntryBlock());
-  OutlinePatterns patterns(FuncBuilder, callbacks, deBlocks);
+  OutlinePatterns patterns(FuncBuilder, deleter, deBlocks);
   bool changed = false;
 
   // Traverse the function.
@@ -1362,7 +1362,7 @@ public:
     DeadEndBlocksAnalysis *deBlocksAnalysis =
         PM->getAnalysis<DeadEndBlocksAnalysis>();
     DeadEndBlocks *deBlocks = deBlocksAnalysis->get(Fun);
-    InstModCallbacks callbacks;
+    InstructionDeleter deleter;
 
     SILOptFunctionBuilder FuncBuilder(*this);
     SmallVector<SILFunction *, 16> FunctionsAdded;
@@ -1370,9 +1370,9 @@ public:
 
     if (Fun->hasOwnership()) {
       Changed =
-          tryOutline(FuncBuilder, Fun, FunctionsAdded, callbacks, deBlocks);
+          tryOutline(FuncBuilder, Fun, FunctionsAdded, deleter, deBlocks);
     } else {
-      Changed = tryOutline(FuncBuilder, Fun, FunctionsAdded);
+      Changed = tryOutline(FuncBuilder, Fun, FunctionsAdded, deleter);
     }
 
     if (!FunctionsAdded.empty()) {
