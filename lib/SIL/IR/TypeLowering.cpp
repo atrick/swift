@@ -1605,6 +1605,20 @@ namespace {
       llvm_unreachable("copy into");
     }
 
+    // OpaqueValue store cannot be decoupled from a destroy because it is not
+    // bitwise-movable.
+    void emitStore(SILBuilder &B, SILLocation loc, SILValue value,
+                   SILValue addr, StoreOwnershipQualifier qual) const override {
+      B.createStore(loc, value, addr, qual);
+    }
+
+    // OpaqueValue load cannot be decoupled from a copy because it is not
+    // bitwise-movable.
+    SILValue emitLoad(SILBuilder &B, SILLocation loc, SILValue addr,
+                      LoadOwnershipQualifier qual) const override {
+      return B.createLoad(loc, addr, qual);
+    }
+
     // --- Same as LeafLoadableTypeLowering.
 
     SILValue emitLoweredCopyValue(SILBuilder &B, SILLocation loc,
