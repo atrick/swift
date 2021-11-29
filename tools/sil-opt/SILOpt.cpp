@@ -442,8 +442,6 @@ int main(int argc, char **argv) {
     EnableObjCInterop ? true :
     DisableObjCInterop ? false : llvm::Triple(Target).isOSDarwin();
 
-  Invocation.getLangOptions().EnableSILOpaqueValues = EnableSILOpaqueValues;
-
   Invocation.getLangOptions().OptimizationRemarkPassedPattern =
       createOptRemarkRegex(PassRemarksPassed);
   Invocation.getLangOptions().OptimizationRemarkMissedPattern =
@@ -525,6 +523,7 @@ int main(int argc, char **argv) {
   SILOpts.EnableOSSAModules = EnableOSSAModules;
   SILOpts.EnableCopyPropagation = EnableCopyPropagation;
   SILOpts.DisableCopyPropagation = DisableCopyPropagation;
+  SILOpts.EnableSILOpaqueValues = EnableSILOpaqueValues;
 
   // Enable lexical lifetimes if it is set or if experimental move only is
   // enabled. This is because move only depends on lexical lifetimes being
