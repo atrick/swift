@@ -45,6 +45,7 @@ bool FrontendOptions::needsProperModuleName(ActionType action) {
   case ActionType::EmitPCH:
     return false;
   case ActionType::EmitSILGen:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIL:
   case ActionType::EmitSIBGen:
   case ActionType::EmitSIB:
@@ -115,6 +116,7 @@ bool FrontendOptions::doesActionRequireSwiftStandardLibrary(ActionType action) {
   case ActionType::EmitSIL:
   case ActionType::EmitModuleOnly:
   case ActionType::MergeModules:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIBGen:
   case ActionType::EmitSIB:
   case ActionType::Immediate:
@@ -199,6 +201,7 @@ bool FrontendOptions::doesActionPerformEndOfPipelineActions(ActionType action) {
   case ActionType::DumpScopeMaps:
   case ActionType::DumpTypeRefinementContexts:
   case ActionType::EmitSILGen:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIL:
   case ActionType::EmitModuleOnly:
   case ActionType::MergeModules:
@@ -270,6 +273,7 @@ FrontendOptions::formatForPrincipalOutputFileForAction(ActionType action) {
     return TY_RawSIL;
 
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
     return TY_SIL;
 
   case ActionType::EmitSIBGen:
@@ -342,6 +346,7 @@ bool FrontendOptions::canActionEmitDependencies(ActionType action) {
   case ActionType::EmitPCH:
   case ActionType::EmitSILGen:
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIBGen:
   case ActionType::EmitSIB:
   case ActionType::EmitIRGen:
@@ -386,6 +391,7 @@ bool FrontendOptions::canActionEmitReferenceDependencies(ActionType action) {
   case ActionType::EmitPCH:
   case ActionType::EmitSILGen:
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIBGen:
   case ActionType::EmitSIB:
   case ActionType::EmitIRGen:
@@ -470,6 +476,7 @@ bool FrontendOptions::canActionEmitObjCHeader(ActionType action) {
   case ActionType::EmitModuleOnly:
   case ActionType::EmitSILGen:
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIBGen:
   case ActionType::EmitSIB:
   case ActionType::EmitIRGen:
@@ -512,6 +519,7 @@ bool FrontendOptions::canActionEmitLoadedModuleTrace(ActionType action) {
   case ActionType::EmitPCH:
   case ActionType::EmitSILGen:
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIBGen:
   case ActionType::EmitSIB:
   case ActionType::EmitIRGen:
@@ -602,6 +610,7 @@ bool FrontendOptions::canActionEmitModule(ActionType action) {
   case ActionType::MergeModules:
   case ActionType::EmitModuleOnly:
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIBGen:
   case ActionType::EmitSIB:
   case ActionType::EmitIRGen:
@@ -649,6 +658,7 @@ bool FrontendOptions::canActionEmitInterface(ActionType action) {
   case ActionType::MergeModules:
   case ActionType::EmitModuleOnly:
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIB:
   case ActionType::EmitIRGen:
   case ActionType::EmitIR:
@@ -676,6 +686,7 @@ bool FrontendOptions::doesActionProduceOutput(ActionType action) {
   case ActionType::EmitPCH:
   case ActionType::EmitSILGen:
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIBGen:
   case ActionType::EmitSIB:
   case ActionType::EmitModuleOnly:
@@ -734,6 +745,7 @@ bool FrontendOptions::doesActionProduceTextualOutput(ActionType action) {
   case ActionType::EmitImportedModules:
   case ActionType::EmitSILGen:
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitAssembly:
   case ActionType::EmitIRGen:
   case ActionType::EmitIR:
@@ -773,6 +785,7 @@ bool FrontendOptions::doesActionGenerateSIL(ActionType action) {
   case ActionType::EmitSILGen:
   case ActionType::EmitSIBGen:
   case ActionType::EmitSIL:
+  case ActionType::EmitLoweredSIL:
   case ActionType::EmitSIB:
   case ActionType::EmitModuleOnly:
   case ActionType::MergeModules:

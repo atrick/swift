@@ -127,8 +127,9 @@ public:
     EmitImportedModules, ///< Emit the modules that this one imports
     EmitPCH,             ///< Emit PCH of imported bridging header
 
-    EmitSILGen, ///< Emit raw SIL
-    EmitSIL,    ///< Emit canonical SIL
+    EmitSILGen,     ///< Emit raw SIL
+    EmitSIL,        ///< Emit canonical SIL
+    EmitLoweredSIL, ///< Emit address-lowered SIL
 
     EmitModuleOnly, ///< Emit module only
     MergeModules,   ///< Merge modules only

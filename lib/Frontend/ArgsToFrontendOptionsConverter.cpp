@@ -435,6 +435,8 @@ ArgsToFrontendOptionsConverter::determineRequestedAction(const ArgList &args) {
     return FrontendOptions::ActionType::EmitBC;
   if (Opt.matches(OPT_emit_sil))
     return FrontendOptions::ActionType::EmitSIL;
+  if (Opt.matches(OPT_emit_lowered_sil))
+    return FrontendOptions::ActionType::EmitLoweredSIL;
   if (Opt.matches(OPT_emit_silgen))
     return FrontendOptions::ActionType::EmitSILGen;
   if (Opt.matches(OPT_emit_sib))

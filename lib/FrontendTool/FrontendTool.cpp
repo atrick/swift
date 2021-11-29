@@ -1600,6 +1600,11 @@ static bool performCompileStepsPostSILGen(CompilerInstance &Instance,
   if (Action == FrontendOptions::ActionType::EmitSIL)
     return writeSIL(*SM, PSPs, Instance, Invocation.getSILOptions());
 
+  if (Action == FrontendOptions::ActionType::EmitLoweredSIL) {
+    runSILLoweringPasses(*SM);
+    return writeSIL(*SM, PSPs, Instance, Invocation);
+  }
+
   assert(Action >= FrontendOptions::ActionType::Immediate &&
          "All actions not requiring IRGen must have been handled!");
   assert(Action != FrontendOptions::ActionType::REPL &&
@@ -1608,8 +1613,6 @@ static bool performCompileStepsPostSILGen(CompilerInstance &Instance,
   // Check if we had any errors; if we did, don't proceed to IRGen.
   if (Context.hadError())
     return !opts.AllowModuleWithCompilerErrors;
-
-  runSILLoweringPasses(*SM);
 
   // TODO: at this point we need to flush any the _tracing and profiling_
   // in the UnifiedStatsReporter, because the those subsystems of the USR
