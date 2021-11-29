@@ -1,11 +1,11 @@
-// RUN: %target-sil-opt -address-lowering -enable-sil-opaque-values -emit-sorted-sil %s | %FileCheck %s
+// RUN: %target-sil-opt -address-lowering -enable-sil-opaque-values -emit-sorted-sil -optimize-opaque-address-lowering %s | %FileCheck %s
 
 import Builtin
-import Swift
 
 sil_stage canonical
 // CHECK: sil_stage lowered
 
+typealias AnyObject = Builtin.AnyObject
 typealias Int = Builtin.Int64
 
 // CHECK-LABEL: sil hidden @f010_addrlower_identity : $@convention(thin) <T> (@in T) -> @out T {
@@ -18,14 +18,14 @@ bb0(%0 : $T):
   return %0 : $T
 }
 
-
+// CHECK-LABEL: sil hidden [noinline] @f020_multiResult : $@convention(thin) <T> (@in T) -> (@out T, @out T, @out T) {
+// CHECK: !!!
+// CHECK-LABEL: } // end sil function '@f020_multiResult'
 sil hidden [noinline] @f020_multiResult : $@convention(thin) <T> (@in T) -> (@out T, @out T, @out T) {
 bb0(%0 : $T):
+  %1 = copy_value %0 : $T
   %2 = copy_value %0 : $T
-  %3 = copy_value %0 : $T
-  %4 = copy_value %0 : $T
-  destroy_value %0 : $T
-  %6 = tuple (%2 : $T, %3 : $T, %4 : $T)
+  %6 = tuple (%0 : $T, %1 : $T, %2 : $T)
   return %6 : $(T, T, T)
 }
 
@@ -36,7 +36,7 @@ bb0(%0 : $T):
 // CHECK: bb0(%0 : $Builtin.Int64):
 // CHECK:  %[[FN:.*]] = function_ref @f020_multiResult : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @out τ_0_0, @out τ_0_0)
 // CHECK:  %[[IN:.*]] = alloc_stack $Builtin.Int64
-// CHECK:  store %0 to %[[IN]] : $*Builtin.Int64
+// CHECK:  store %0 to [init] %[[IN]] : $*Builtin.Int64
 // CHECK:  %[[OUT1:.*]] = alloc_stack $Builtin.Int64
 // CHECK:  %[[OUT2:.*]] = alloc_stack $Builtin.Int64
 // CHECK:  %[[OUT3:.*]] = alloc_stack $Builtin.Int64
@@ -64,18 +64,14 @@ bb0(%0 : $Int):
 
 // CHECK-LABEL: sil @f030_returnPair : $@convention(thin) <T> (@in T) -> (@out T, @out T) {
 // CHECK: bb0(%0 : $*T, %1 : $*T, %2 : $*T):
-// CHECK:   %[[LOCAL:.*]] = alloc_stack $T
-// CHECK:   copy_addr %2 to [initialization] %[[LOCAL]] : $*T
-// CHECK:   copy_addr [take] %[[LOCAL]] to [initialization] %0 : $*T
+// CHECK:   copy_addr %2 to [initialization] %0 : $*T
 // CHECK:   copy_addr [take] %2 to [initialization] %1 : $*T
-// CHECK:   %[[R:.*]] = tuple ()
-// CHECK:   dealloc_stack %[[LOCAL]] : $*T
-// CHECK:   return %[[R]] : $()
+// CHECK:   return %{{.*}} : $()
 // CHECK-LABEL: } // end sil function 'f030_returnPair'
 sil @f030_returnPair : $@convention(thin) <T> (@in T) -> (@out T, @out T) {
 bb0(%0 : $T):
-  %2 = copy_value %0 : $T
-  %3 = tuple (%2 : $T, %0 : $T)
+  %1 = copy_value %0 : $T
+  %3 = tuple (%0 : $T, %1 : $T)
   return %3 : $(T, T)
 }
 
@@ -83,43 +79,29 @@ bb0(%0 : $T):
 // CHECK: bb0(%0 : $*T, %1 : $*T):
 // CHECK:   %[[LOC0:.*]] = alloc_stack $T
 // CHECK:   %[[OUT1:.*]] = alloc_stack $T
-// CHECK:   %[[LOC1:.*]] = alloc_stack $T
-// CHECK:   %[[OUT2:.*]] = alloc_stack $T
-// CHECK:   %[[LOC2:.*]] = alloc_stack $T
-// CHECK:   // function_ref f030_returnPair
 // CHECK:   %[[F:.*]] = function_ref @f030_returnPair : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @out τ_0_0)
-// CHECK:   copy_addr %1 to [initialization] %[[LOC0]] : $*T
-// CHECK:   %[[R0:.*]] = apply %[[F]]<T>(%[[OUT1]], %[[OUT2]], %[[LOC0]]) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @out τ_0_0)
-// CHECK:   copy_addr %[[OUT1]] to [initialization] %[[LOC1]] : $*T
-// CHECK:   copy_addr %[[OUT2]] to [initialization] %[[LOC2]] : $*T
+// CHECK:   %[[R0:.*]] = apply %[[F]]<T>(%[[OUT1]], %0, %1) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @out τ_0_0)
 // CHECK:   destroy_addr %[[OUT1]] : $*T
-// CHECK:   destroy_addr %[[OUT2]] : $*T
-// CHECK:   destroy_addr %[[LOC1]] : $*T
-// CHECK:   destroy_addr %1 : $*T
-// CHECK:   copy_addr [take] %[[LOC2]] to [initialization] %0 : $*T
-// CHECK:   %[[R:.*]] = tuple ()
-// CHECK:   dealloc_stack %[[LOC2]] : $*T
-// CHECK:   dealloc_stack %[[OUT2]] : $*T
-// CHECK:   dealloc_stack %[[LOC1]] : $*T
 // CHECK:   dealloc_stack %[[OUT1]] : $*T
 // CHECK:   dealloc_stack %[[LOC0]] : $*T
-// CHECK:   return %[[R]] : $()
+// CHECK:   return %{{.*}} : $()
 // CHECK-LABEL: } // end sil function 'f031_unusedIndirect'
 sil @f031_unusedIndirect : $@convention(thin) <T> (@in T) -> @out T {
 bb0(%0 : $T):
   %2 = function_ref @f030_returnPair : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @out τ_0_0)
-  %3 = copy_value %0 : $T
-  %4 = apply %2<T>(%3) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @out τ_0_0)
+  %4 = apply %2<T>(%0) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @out τ_0_0)
   %5 = tuple_extract %4 : $(T, T), 0
   %6 = copy_value %5 : $T
   %7 = tuple_extract %4 : $(T, T), 1
   %8 = copy_value %7 : $T
   destroy_value %4 : $(T, T)
   destroy_value %6 : $T
-  destroy_value %0 : $T
-  return %8 : $T
+  return %7 : $T
 }
 
+// CHECK-LABEL: sil hidden @f040_consumeArg : $@convention(thin) <T> (@in T) -> () {
+// CHECK: !!!
+// CHECK-LABEL: } // end sil function 'f040_consumeArg'
 sil hidden @f040_consumeArg : $@convention(thin) <T> (@in T) -> () {
 bb0(%0 : $T):
   destroy_value %0 : $T
@@ -133,7 +115,7 @@ bb0(%0 : $T):
 // CHECK:  %[[FN:.*]] = function_ref @f040_consumeArg : $@convention(thin) <τ_0_0> (@in τ_0_0) -> ()
 // CHECK:  copy_addr %0 to [initialization] %[[LOC]] : $*T
 // CHECK:  %{{.*}} = apply %[[FN]]<T>(%[[LOC]]) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> ()
-// CHECK:  destroy_addr %0 : $*T
+// CHECK:  release_addr %0 : $*T
 // CHECK:  %[[R:.*]] = tuple ()
 // CHECK:  dealloc_stack %[[LOC]] : $*T
 // CHECK:  return %[[R]] : $()
@@ -150,40 +132,33 @@ bb0(%0 : $T):
 
 // CHECK-LABEL: sil @f050_storeinout : $@convention(thin) <T> (@inout T, @inout T, @in T) -> () {
 // CHECK: bb0(%0 : $*T, %1 : $*T, %2 : $*T):
-// CHECK:   %[[ARG1:.*]] = alloc_stack $T
 // CHECK:   %[[PREV1:.*]] = alloc_stack $T
-// CHECK:   %[[ARG2:.*]] = alloc_stack $T
 // CHECK:   %[[PREV2:.*]] = alloc_stack $T
-// CHECK:   debug_value %0 : $*T, var, name "t", argno 1, expr op_deref
-// CHECK:   debug_value %1 : $*T, var, name "u", argno 2, expr op_deref
-// CHECK:   debug_value %2 : $*T, {{.*}} expr op_deref
-// CHECK:   copy_addr %2 to [initialization] %[[ARG1]] : $*T
+// CHECK:   debug_value_addr %0 : $*T, var, name "t", argno 1
+// CHECK:   debug_value_addr %1 : $*T, var, name "u", argno 2
+// CHECK:   debug_value_addr %2 : $*T
 // CHECK:   copy_addr [take] %0 to [initialization] %[[PREV1]] : $*T
-// CHECK:   copy_addr [take] %[[ARG1]] to [initialization] %0 : $*T
-// CHECK:   destroy_addr %[[PREV1]] : $*T
-// CHECK:   copy_addr %2 to [initialization] %[[ARG2]] : $*T
+// CHECK:   copy_addr %2 to [initialization] %0 : $*T
+// CHECK:   release_addr %[[PREV1]] : $*T
 // CHECK:   copy_addr [take] %1 to [initialization] %[[PREV2]] : $*T
-// CHECK:   copy_addr [take] %[[ARG2]] to [initialization] %1 : $*T
-// CHECK:   destroy_addr %[[PREV2]] : $*T
-// CHECK:   destroy_addr %2 : $*T
-// CHECK:   %[[R:.*]] = tuple ()
+// CHECK:   copy_addr %2 to [initialization] %1 : $*T
+// CHECK:   release_addr %[[PREV2]] : $*T
+// CHECK:   release_addr %2 : $*T
 // CHECK:   dealloc_stack %[[PREV2]] : $*T
-// CHECK:   dealloc_stack %[[ARG2]] : $*T
 // CHECK:   dealloc_stack %[[PREV1]] : $*T
-// CHECK:   dealloc_stack %[[ARG1]] : $*T
-// CHECK:   return %[[R]] : $()
+// CHECK:   return %{{.*}} : $()
 // CHECK-LABEL: } // end sil function 'f050_storeinout'
 sil @f050_storeinout : $@convention(thin) <T> (@inout T, @inout T, @in T) -> () {
 bb0(%0 : $*T, %1 : $*T, %2 : $T):
   debug_value %0 : $*T, var, name "t", argno 1, expr op_deref
   debug_value %1 : $*T, var, name "u", argno 2, expr op_deref
   debug_value %2 : $T, let, name "x", argno 3
-  %6 = copy_value %2 : $T
   %7 = load %0 : $*T
-  store %6 to %0 : $*T
+  %6 = copy_value %2 : $T
+  store %6 to [init] %0 : $*T
   destroy_value %7 : $T
-  %10 = copy_value %2 : $T
   %11 = load %1 : $*T
+  %10 = copy_value %2 : $T
   store %10 to %1 : $*T
   destroy_value %11 : $T
   destroy_value %2 : $T
@@ -191,6 +166,9 @@ bb0(%0 : $*T, %1 : $*T, %2 : $T):
   return %15 : $()
 }
 
+// CHECK-LABEL: sil hidden @f060_mutate : $@convention(thin) <T> (@inout T, @in T) -> () {
+// CHECK: !!!
+// CHECK-LABEL: } // end sil function 'f060_mutate'
 sil hidden @f060_mutate : $@convention(thin) <T> (@inout T, @in T) -> () {
 bb0(%0 : $*T, %1 : $T):
   %4 = copy_value %1 : $T
@@ -205,20 +183,16 @@ bb0(%0 : $*T, %1 : $T):
 // CHECK-LABEL: sil @f061_callinout : $@convention(thin) <T> (@in T) -> () {
 // CHECK: bb0(%0 : $*T):
 // CHECK:   %[[LOC1:.*]] = alloc_stack $T
-// CHECK:   %[[LOC2:.*]] = alloc_stack $T
 // CHECK:   %[[INOUT:.*]] = alloc_stack $T, var, name "u"
-// CHECK:   copy_addr %0 to [initialization] %[[LOC1]] : $*T
-// CHECK:   copy_addr [take] %[[LOC1]] to [initialization] %[[INOUT]] : $*T
+// CHECK:   copy_addr %0 to [initialization] %[[INOUT]] : $*T
 // CHECK:   %[[FN:.*]] = function_ref @f060_mutate : $@convention(thin) <τ_0_0> (@inout τ_0_0, @in τ_0_0) -> ()
-// CHECK:   copy_addr %0 to [initialization] %[[LOC2]] : $*T
-// CHECK:   %{{.*}} = apply %[[FN]]<T>(%[[INOUT]], %[[LOC2]]) : $@convention(thin) <τ_0_0> (@inout τ_0_0, @in τ_0_0) -> ()
-// CHECK:   destroy_addr %[[INOUT]] : $*T
-// CHECK:   destroy_addr %0 : $*T
-// CHECK:   %[[R:.*]] = tuple ()
+// CHECK:   copy_addr %0 to [initialization] %[[LOC1]] : $*T
+// CHECK:   %{{.*}} = apply %[[FN]]<T>(%[[INOUT]], %[[LOC1]]) : $@convention(thin) <τ_0_0> (@inout τ_0_0, @in τ_0_0) -> ()
+// CHECK:   release_addr %[[INOUT]] : $*T
+// CHECK:   release_addr %0 : $*T
 // CHECK:   dealloc_stack %[[INOUT]] : $*T
-// CHECK:   dealloc_stack %[[LOC2]] : $*T
 // CHECK:   dealloc_stack %[[LOC1]] : $*T
-// CHECK:   return %[[R]] : $()
+// CHECK:   return %{{.*}} : $()
 // CHECK-LABEL: } // end sil function 'f061_callinout'
 sil @f061_callinout : $@convention(thin) <T> (@in T) -> () {
 bb0(%0 : $T):
@@ -250,13 +224,10 @@ bb0(%0 : $T, %1 : $C):
 
 // CHECK-LABEL: sil @f071_mixedResult2 : $@convention(thin) <T> (@in T, @owned C) -> (@out T, @out T, @owned C, @owned C) {
 // CHECK: bb0(%0 : $*T, %1 : $*T, %2 : $*T, %3 : $C):
-// CHECK:   %[[L:.*]] = alloc_stack $T
-// CHECK:   copy_addr %2 to [initialization] %[[L]] : $*T
+// CHECK:   copy_addr %2 to [initialization] %0 : $*T
 // CHECK:   strong_retain %3 : $C
-// CHECK:   copy_addr [take] %[[L]] to [initialization] %0 : $*T
 // CHECK:   copy_addr [take] %2 to [initialization] %1 : $*T
 // CHECK:   %[[T:.*]] = tuple (%3 : $C, %3 : $C)
-// CHECK:   dealloc_stack %[[L]] : $*T
 // CHECK:   return %[[T]] : $(C, C)
 // CHECK-LABEL: } // end sil function 'f071_mixedResult2'
 sil @f071_mixedResult2 : $@convention(thin) <T> (@in T, @owned C) -> (@out T, @out T, @owned C, @owned C) {
@@ -269,24 +240,13 @@ bb0(%0 : $T, %1 : $C):
 
 // CHECK-LABEL: sil @f072_callMixedResult1 : $@convention(thin) <T> (@in T, @owned C) -> (@out T, @owned C) {
 // CHECK: bb0(%0 : $*T, %1 : $*T, %2 : $C):
-// CHECK:   %[[LIN:.*]] = alloc_stack $T
-// CHECK:   %[[OUT:.*]] = alloc_stack $T
-// CHECK:   %[[LOUT:.*]] = alloc_stack $T
 // CHECK:   // function_ref f070_mixedResult1
 // CHECK:   %[[F:.*]] = function_ref @f070_mixedResult1 : $@convention(thin) <τ_0_0> (@in τ_0_0, @owned C) -> (@out τ_0_0, @owned C)
-// CHECK:   copy_addr %1 to [initialization] %[[LIN]] : $*T
+// CHECK:   copy_addr %1 to [initialization] %[[IN]] : $*T
 // CHECK:   strong_retain %2 : $C
-// CHECK:   %[[R:.*]] = apply %[[F]]<T>(%[[OUT]], %[[LIN]], %2) : $@convention(thin) <τ_0_0> (@in τ_0_0, @owned C) -> (@out τ_0_0, @owned C)
-// CHECK:   copy_addr %[[OUT]] to [initialization] %[[LOUT]] : $*T
-// CHECK:   strong_retain %[[R]] : $C
-// CHECK:   destroy_addr %[[OUT]] : $*T
-// CHECK:   strong_release %[[R]] : $C
+// CHECK:   %[[R:.*]] = apply %[[F]]<T>(%0, %1, %2) : $@convention(thin) <τ_0_0> (@in τ_0_0, @owned C) -> (@out τ_0_0, @owned C)
 // CHECK:   strong_release %2 : $C
 // CHECK:   destroy_addr %1 : $*T
-// CHECK:   copy_addr [take] %[[LOUT]] to [initialization] %0 : $*T
-// CHECK:   dealloc_stack %[[LOUT]] : $*T
-// CHECK:   dealloc_stack %[[OUT]] : $*T
-// CHECK:   dealloc_stack %[[LIN]] : $*T
 // CHECK:   return %[[R]] : $C
 // CHECK-LABEL: } // end sil function 'f072_callMixedResult1'
 sil @f072_callMixedResult1 : $@convention(thin) <T> (@in T, @owned C) -> (@out T, @owned C) {
@@ -308,19 +268,14 @@ bb0(%0 : $T, %1 : $C):
 
 // CHECK-LABEL: sil @f073_callMixedResult2 : $@convention(thin) <T> (@in T, @owned C) -> (@out T, @out T, @owned C, @owned C) {
 // CHECK: bb0(%0 : $*T, %1 : $*T, %2 : $*T, %3 : $C):
-// CHECK:   %[[LOC0:.*]] = alloc_stack $T
-// CHECK:   %[[OUT1:.*]] = alloc_stack $T
-// CHECK:   %[[LOC1:.*]] = alloc_stack $T
-// CHECK:   %[[OUT2:.*]] = alloc_stack $T
-// CHECK:   %[[LOC2:.*]] = alloc_stack $T
 // CHECK:   %[[F:.*]] = function_ref @f071_mixedResult2 : $@convention(thin) <τ_0_0> (@in τ_0_0, @owned C) -> (@out τ_0_0, @out τ_0_0, @owned C, @owned C)
 // CHECK:   copy_addr %2 to [initialization] %[[LOC0]] : $*T
 // CHECK:   strong_retain %3 : $C
-// CHECK:   %[[R:.*]] = apply %[[F]]<T>(%[[OUT1]], %[[OUT2]], %[[LOC0]], %3) : $@convention(thin) <τ_0_0> (@in τ_0_0, @owned C) -> (@out τ_0_0, @out τ_0_0, @owned C, @owned C)
+// CHECK:   %[[R:.*]] = apply %[[F]]<T>(%0, %1, %2, %3) : $@convention(thin) <τ_0_0> (@in τ_0_0, @owned C) -> (@out τ_0_0, @out τ_0_0, @owned C, @owned C)
 // CHECK:   %[[T2:.*]] = tuple_extract %[[R]] : $(C, C), 1
 // CHECK:   %[[T1:.*]] = tuple_extract %[[R]] : $(C, C), 0
-// CHECK:   copy_addr %[[OUT1]] to [initialization] %[[LOC1]] : $*T
-// CHECK:   copy_addr %[[OUT2]] to [initialization] %[[LOC2]] : $*T
+// CHECK:   copy_addr %[[OUT1]] to [initialization] %0 : $*T
+// CHECK:   copy_addr %[[OUT2]] to [initialization] %1 : $*T
 // CHECK:   strong_retain %[[T1]] : $C
 // CHECK:   strong_retain %[[T2]] : $C
 // CHECK:   destroy_addr %[[OUT1]] : $*T
@@ -329,14 +284,7 @@ bb0(%0 : $T, %1 : $C):
 // CHECK:   strong_release %[[T2]] : $C
 // CHECK:   strong_release %3 : $C
 // CHECK:   destroy_addr %2 : $*T
-// CHECK:   copy_addr [take] %[[LOC1]] to [initialization] %0 : $*T
-// CHECK:   copy_addr [take] %[[LOC2]] to [initialization] %1 : $*T
 // CHECK:   %[[T:.*]] = tuple (%[[T1]] : $C, %[[T2]] : $C)
-// CHECK:   dealloc_stack %[[LOC2]] : $*T
-// CHECK:   dealloc_stack %[[OUT2]] : $*T
-// CHECK:   dealloc_stack %[[LOC1]] : $*T
-// CHECK:   dealloc_stack %[[OUT1]] : $*T
-// CHECK:   dealloc_stack %[[LOC0]] : $*T
 // CHECK:   return %[[T]] : $(C, C)
 // CHECK-LABEL: } // end sil function 'f073_callMixedResult2'
 sil @f073_callMixedResult2 : $@convention(thin) <T> (@in T, @owned C) -> (@out T, @out T, @owned C, @owned C) {
@@ -376,11 +324,7 @@ enum Optional<T> {
 // CHECK:   copy_addr [take] %[[L1]] to [initialization] %[[DATA]] : $*T
 // CHECK:   inject_enum_addr %[[L2]] : $*Optional<T>, #Optional.some!enumelt
 // CHECK:   destroy_addr %1 : $*T
-// CHECK:   copy_addr [take] %[[L2]] to [initialization] %0 : $*Optional<T>
-// CHECK:   %[[T:.*]] = tuple ()
-// CHECK:   dealloc_stack %[[L2]] : $*Optional<T>
-// CHECK:   dealloc_stack %[[L1]] : $*T
-// CHECK:   return %[[T]] : $()
+// CHECK:   return %{{.*}} : $()
 // CHECK-LABEL: } // end sil function 'f080_optional'
 sil @f080_optional : $@convention(thin) <T> (@in T) -> @out Optional<T> {
 bb0(%0 : $T):
@@ -410,12 +354,12 @@ bb0(%0 : $(Int, Int), %1 : $Int):
 // CHECK:   %[[O1:.*]] = alloc_stack $(Builtin.Int64, Builtin.Int64)
 // CHECK:   %[[O2:.*]] = alloc_stack $(Builtin.Int64, Builtin.Int64)
 // CHECK:   %[[RT:.*]] = apply %[[F]](%[[O1]], %4, %1, %0) : $@convention(thin) ((Builtin.Int64, Builtin.Int64), Builtin.Int64) -> (@out (Builtin.Int64, Builtin.Int64), @out (Builtin.Int64, Builtin.Int64), Builtin.Int64, Builtin.Int64)
-// CHECK:   %[[R1:.*]] = tuple_extract %[[RT]] : $(Builtin.Int64, Builtin.Int64), 1
-// CHECK:   %[[R0:.*]] = tuple_extract %[[RT]] : $(Builtin.Int64, Builtin.Int64), 0
 // CHECK:   %[[L2:.*]] = load %[[O2]] : $*(Builtin.Int64, Builtin.Int64)
 // CHECK:   dealloc_stack %[[O2]] : $*(Builtin.Int64, Builtin.Int64)
 // CHECK:   %[[L1:.*]] = load %[[O1]] : $*(Builtin.Int64, Builtin.Int64)
 // CHECK:   dealloc_stack %[[O1]] : $*(Builtin.Int64, Builtin.Int64)
+// CHECK:   %[[R1:.*]] = tuple_extract %[[RT]] : $(Builtin.Int64, Builtin.Int64), 1
+// CHECK:   %[[R0:.*]] = tuple_extract %[[RT]] : $(Builtin.Int64, Builtin.Int64), 0
 // CHECK:   %[[E10:.*]] = tuple_extract %[[L1]] : $(Builtin.Int64, Builtin.Int64), 0
 // CHECK:   %[[E11:.*]] = tuple_extract %[[L1]] : $(Builtin.Int64, Builtin.Int64), 1
 // CHECK:   %[[E20:.*]] = tuple_extract %[[L2]] : $(Builtin.Int64, Builtin.Int64), 0
@@ -456,18 +400,14 @@ bb0(%0 : $Any):
 
 // CHECK-LABEL: sil @f101_passAny : $@convention(thin) <T> (@in T) -> () {
 // CHECK: bb0(%0 : $*T):
-// CHECK:   %[[T1:.*]] = alloc_stack $T
 // CHECK:   %[[A:.*]] = alloc_stack $Any
 // CHECK:   %[[F:.*]] = function_ref @f100_any : $@convention(thin) (@in Any) -> ()
-// CHECK:   copy_addr %0 to [initialization] %[[T1]] : $*T
 // CHECK:   %[[T2:.*]] = init_existential_addr %[[A]] : $*Any, $T
-// CHECK:   copy_addr [take] %[[T1]] to [initialization] %[[T2]] : $*T
+// CHECK:   copy_addr %0 to [initialization] %[[T2]] : $*T
 // CHECK:   %{{.*}} = apply %[[F]](%[[A]]) : $@convention(thin) (@in Any) -> ()
 // CHECK:   destroy_addr %0 : $*T
-// CHECK:   %[[R:.*]] = tuple ()
 // CHECK:   dealloc_stack %[[A]] : $*Any
-// CHECK:   dealloc_stack %[[T1]] : $*T
-// CHECK:   return %[[R]] : $()
+// CHECK:   return %{{.*}} : $()
 // CHECK-LABEL: } // end sil function 'f101_passAny'
 sil @f101_passAny : $@convention(thin) <T> (@in T) -> () {
 bb0(%0 : $T):
@@ -505,4 +445,487 @@ bb0(%0 : $AnyObject):
   strong_release %0 : $AnyObject
   %7 = tuple ()
   return %7 : $()
+}
+
+// Helper
+sil @f110_singleIndirectFunc : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+
+// Test convertApplyWithIndirectResults.
+// CHECK-LABEL: sil @f111_singleIndirectApply : $@convention(thin) <τ_0_0> () -> @out τ_0_0 {
+// CHECK: bb0(%0 : $*τ_0_0):
+// CHECK: [[F:%.*]] = function_ref @f110_singleIndirectFunc : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+// CHECK: %{{.*}} = apply [[F]]<τ_0_0>(%0) : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+// CHECK: return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f111_singleIndirectApply'
+sil @f111_singleIndirectApply : $@convention(thin) <τ_0_0> () -> @out τ_0_0 {
+bb0:
+  %2 = function_ref @f110_singleIndirectFunc : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+  %3 = apply %2<τ_0_0>() : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+  return %3 : $τ_0_0
+}
+
+struct I {}
+
+struct S<T> {
+  var index: I
+  var element: T
+}
+
+// Test testStructExtract.
+// CHECK-LABEL: sil @f120_testStructExtract : $@convention(method) <Element> (@in S<Element>) -> (@out Element, @out I) {
+// CHECK: bb0(%0 : $*Element, %1 : $*I, %2 : $*S<Element>):
+// CHECK:   [[ELT_ADR:%.*]] = struct_element_addr %2 : $*S<Element>, #S.element
+// CHECK:   [[IDX_ADR:%.*]] = struct_element_addr %2 : $*S<Element>, #S.index
+// CHECK:   [[IDX:%.*]] = load [[IDX_ADR]] : $*I
+// CHECK:   store [[IDX]] to %1 : $*I
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f120_testStructExtract'
+sil @f120_testStructExtract : $@convention(method) <Element> (@in S<Element>) -> (@out Element, @out I) {
+bb0(%0 : $S<Element>):
+  %element = struct_extract %0 : $S<Element>, #S.element
+  %index = struct_extract %0 : $S<Element>, #S.index
+  %tuple = tuple(%element : $Element, %index : $I)
+  return %tuple : $(Element, I)
+}
+
+// CHECK-LABEL: sil @f130_testReleaseValue : $@convention(thin) <T> (@in T) -> () {
+// CHECK: bb0(%0 : $*T):
+// CHECK:   destroy_value_addr %0 : $*T
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f130_testReleaseValue'
+sil @f130_testReleaseValue : $@convention(thin) <T> (@in T) -> () {
+bb0(%0 : $T):
+  destroy_value %0 : $T
+  %r = tuple ()
+  return %r : $()
+}
+
+// CHECK-LABEL: sil @f140_testTupleProject : $@convention(thin) <T> (@in T) -> () {
+// CHECK: bb0(%0 : $*T):
+// CHECK:   [[LOCAL:%.*]] = alloc_stack $((T, T), T)
+// CHECK:   [[ELT0:%.*]] = tuple_element_addr [[LOCAL]] : $*((T, T), T), 0
+// CHECK:   [[ELT0_0:%.*]] = tuple_element_addr [[ELT0]] : $*(T, T), 0
+// CHECK:   copy_addr %0 to [initialization] [[ELT0_0]] : $*T
+// CHECK:   [[ELT1:%.*]] = tuple_element_addr [[LOCAL]] : $*((T, T), T), 1
+// CHECK:   copy_addr %0 to [initialization] [[ELT1]] : $*T
+// CHECK:   [[ELT0_1:%.*]] = tuple_element_addr [[ELT0]] : $*(T, T), 1
+// CHECK:   copy_addr [take] %0 to [initialization] [[ELT0_1]] : $*T
+// CHECK:   destroy_addr [[LOCAL]] : $*((T, T), T)
+// CHECK:   dealloc_stack [[LOCAL]] : $*((T, T), T)
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f140_testTupleProject'
+sil @f140_testTupleProject : $@convention(thin) <T> (@in T) -> () {
+bb0(%0 : $T):
+  %copy0 = copy_value %0 : $T
+  %copy1 = copy_value %0 : $T
+  %tuple1 = tuple (%copy0 : $T, %0 : $T)
+  %tuple2 = tuple (%tuple1 : $(T, T), %copy1 : $T)
+  destroy_value %tuple2 : $((T, T), T)
+  %r = tuple ()
+  return %r : $()
+}
+
+struct Pair<T> {
+  var x : T
+  var y : T
+}
+
+// CHECK-LABEL: sil @f150_testStructProject : $@convention(thin) <T> (@in T) -> () {
+// CHECK: bb0(%0 : $*T):
+// CHECK:   [[ALLOC:%.*]] = alloc_stack $Pair<Pair<T>>
+// CHECK:   [[ELT_X:%.*]] = struct_element_addr [[ALLOC]] : $*Pair<Pair<T>>, #Pair.x
+// CHECK:   [[ELT_XY:%.*]] = struct_element_addr [[ELT_X]] : $*Pair<T>, #Pair.y
+// CHECK:   copy_addr %0 to [initialization] [[ELT_XY]] : $*T
+// CHECK:   [[ELT_XX:%.*]] = struct_element_addr [[ELT_X]] : $*Pair<T>, #Pair.x
+// CHECK:   copy_addr [take] %0 to [initialization] [[ELT_XX]] : $*T
+// CHECK:   [[ELT_Y:%.*]] = struct_element_addr [[ALLOC]] : $*Pair<Pair<T>>, #Pair.y
+// CHECK:   copy_addr [[ELT_X]] to [initialization] [[ELT_Y]] : $*Pair<T>
+// CHECK:   destroy_addr [[ALLOC]] : $*Pair<Pair<T>>
+// CHECK:   dealloc_stack [[ALLOC]] : $*Pair<Pair<T>>
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f150_testStructProject'
+sil @f150_testStructProject : $@convention(thin) <T> (@in T) -> () {
+bb0(%0 : $T):
+  %copy0 = copy_value %0 : $T
+  %struct1 = struct $Pair<T> (%0 : $T, %copy0 : $T)
+  %struct_copy = copy_value %struct1 : $Pair<T>
+  %struct2 = struct $Pair<Pair<T>> (%struct1 : $Pair<T>, %struct_copy : $Pair<T>)
+  destroy_value %struct2 : $Pair<Pair<T>>
+  %r = tuple ()
+  return %r : $()
+}
+
+protocol P {
+  func foo()
+}
+
+// CHECK-LABEL: sil hidden @f160_testOpenedArchetype : $@convention(thin) (@in P) -> () {
+// CHECK: bb0(%0 : $*P):
+// CHECK:   [[ALLOC:%.*]] = alloc_stack $P, var, name "q"
+// CHECK:   copy_addr %0 to [initialization] [[ALLOC]] : $*P
+// CHECK:   [[OPEN:%.*]] = open_existential_addr immutable_access %0 : $*P to $*[[ARCHETYPE:@opened(.*)]] P
+// CHECK:   [[WT:%.*]] = witness_method $[[ARCHETYPE]] P, #P.foo!1 : <Self where Self : P> (Self) -> () -> (), [[OPEN]] : $*[[ARCHETYPE]] P : $@convention(witness_method: P) <τ_0_0 where τ_0_0 : P> (@in_guaranteed τ_0_0) -> ()
+// CHECK:   copy_value_addr [[OPEN]] : $*[[ARCHETYPE]] P
+// CHECK:   %{{.*}} = apply [[WT]]<[[ARCHETYPE]] P>([[OPEN]]) : $@convention(witness_method: P) <τ_0_0 where τ_0_0 : P> (@in_guaranteed τ_0_0) -> ()
+// CHECK:   destroy_addr [[ALLOC]] : $*P
+// CHECK:   dealloc_stack [[ALLOC]] : $*P
+// CHECK:   destroy_addr %0 : $*P
+// CHECK:   %{{.*}} = tuple ()
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f160_testOpenedArchetype'
+sil hidden @f160_testOpenedArchetype : $@convention(thin) (@in P) -> () {
+bb0(%0 : $P):
+  %2 = alloc_stack $P, var, name "q"
+  %3 = copy_value %0 : $P
+  store %3 to %2 : $*P
+  %8 = open_existential_value %0 : $P to $@opened("EF755EF2-B636-11E7-B7B4-A45E60ECC541") P
+  %9 = witness_method $@opened("EF755EF2-B636-11E7-B7B4-A45E60ECC541") P, #P.foo!1 : <Self where Self : P> (Self) -> () -> (), %8 : $@opened("EF755EF2-B636-11E7-B7B4-A45E60ECC541") P : $@convention(witness_method: P) <τ_0_0 where τ_0_0 : P> (@in_guaranteed τ_0_0) -> ()
+  // Test that we can handle owned value of type opened archetype.
+  %10 = copy_value %8 : $@opened("EF755EF2-B636-11E7-B7B4-A45E60ECC541") P
+  %11 = apply %9<@opened("EF755EF2-B636-11E7-B7B4-A45E60ECC541") P>(%10) : $@convention(witness_method: P) <τ_0_0 where τ_0_0 : P> (@in_guaranteed τ_0_0) -> ()
+  destroy_addr %2 : $*P
+  dealloc_stack %2 : $*P
+  destroy_value %0 : $P
+  %16 = tuple ()
+  return %16 : $()
+}
+
+// CHECK-LABEL: sil @f170_compare : $@convention(thin) <T where T : Comparable> (@in T, @in T) -> @out T {
+// CHECK: bb0(%0 : $*T, %1 : $*T, %2 : $*T):
+// CHECK:   [[WT:%.*]] = witness_method $T, #Comparable."<"!1 : <Self where Self : Comparable> (Self.Type) -> (Self, Self) -> Bool : $@convention(witness_method: Comparable) <τ_0_0 where τ_0_0 : Comparable> (@in τ_0_0, @in τ_0_0, @thick τ_0_0.Type) -> Bool
+// CHECK:   [[MT:%.*]] = metatype $@thick T.Type
+// CHECK:   copy_value_addr %2 : $*T
+// CHECK:   copy_value_addr %1 : $*T
+// CHECK:   [[CALL:%.*]] = apply [[WT]]<T>(%2, %1, [[MT]]) : $@convention(witness_method: Comparable) <τ_0_0 where τ_0_0 : Comparable> (@in τ_0_0, @in τ_0_0, @thick τ_0_0.Type) -> Bool
+// CHECK:   [[COND:%.*]] = struct_extract [[CALL]] : $Bool, #Bool._value
+// CHECK:   cond_br [[COND]], bb2, bb1
+// CHECK: bb1:
+// CHECK:   copy_addr [take] %1 to [initialization] %0 : $*T
+// CHECK:   br bb3
+// CHECK: bb2:
+// CHECK:   copy_addr [take] %2 to [initialization] %0 : $*T
+// CHECK:   br bb3
+// CHECK: bb3:
+// CHECK:   %{{.*}} = tuple ()
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f170_compare'
+sil @f170_compare : $@convention(thin) <T where T : Comparable> (@in T, @in T) -> @out T {
+bb0(%0 : $T, %1 : $T):
+  %4 = witness_method $T, #Comparable."<"!1 : <Self where Self : Comparable> (Self.Type) -> (Self, Self) -> Bool : $@convention(witness_method: Comparable) <τ_0_0 where τ_0_0 : Comparable> (@in τ_0_0, @in τ_0_0, @thick τ_0_0.Type) -> Bool
+  %5 = metatype $@thick T.Type
+  %6 = copy_value %1 : $T
+  %7 = copy_value %0 : $T
+  %8 = apply %4<T>(%6, %7, %5) : $@convention(witness_method: Comparable) <τ_0_0 where τ_0_0 : Comparable> (@in τ_0_0, @in τ_0_0, @thick τ_0_0.Type) -> Bool
+  %9 = struct_extract %8 : $Bool, #Bool._value
+  cond_br %9, bb1, bb2
+
+bb1:
+  br bb3(%1 : $T)
+
+bb2:
+  br bb3(%0 : $T)
+
+bb3(%15 : $T):
+  return %15 : $T
+}
+
+// Test BBArgs allocation.
+
+sil @takeIn : $@convention(thin) <T> (@in T) -> ()
+
+sil @getOut : $@convention(thin) <T> () -> @out T
+
+// No projection from incoming values. No interference.
+// CHECK-LABEL: sil @f180_testBBArgSelect : $@convention(thin) <T> () -> @out T {
+// CHECK: bb0(%0 : $*T):
+// CHECK:   [[F:%.*]] = function_ref @getOut : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+// CHECK:   cond_br undef, bb2, bb1
+// CHECK: bb1:
+// CHECK:   [[GET0:%.*]] = apply [[F]]<T>(%0) : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+// CHECK:   br bb3
+// CHECK: bb2:
+// CHECK:   [[GET1:%.*]] = apply [[F]]<T>(%0) : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+// CHECK:   br bb3
+// CHECK: bb3:
+// CHECK:   %{{.*}} = tuple ()
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f180_testBBArgSelect'
+sil @f180_testBBArgSelect : $@convention(thin) <T> () -> @out T {
+bb0:
+  %get = function_ref @getOut : $@convention(thin) <τ_0_0>() -> @out τ_0_0
+  cond_br undef, bb1, bb2
+
+bb1:
+  %get0 = apply %get<T>() : $@convention(thin) <τ_0_0>() -> @out τ_0_0
+  br bb3(%get0 : $T)
+
+bb2:
+  %get1 = apply %get<T>() : $@convention(thin) <τ_0_0>() -> @out τ_0_0
+  br bb3(%get1 : $T)
+
+// %15
+bb3(%15 : $T):
+  return %15 : $T
+}
+
+// One projection from incoming values. One interference.
+// One projection from incoming values. One interference.
+// CHECK-LABEL: sil @f190_testBBArgProjectOne : $@convention(thin) <T> () -> @out T {
+// CHECK: bb0(%0 : $*T):
+// CHECK:   [[ALLOC:%.*]] = alloc_stack $T
+// CHECK:   [[GETF:%.*]] = function_ref @getOut : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+// CHECK:   [[OUT0:%.*]] = apply [[GETF]]<T>(%0) : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+// CHECK:   [[OUT1:%.*]] = apply [[GETF]]<T>(%1) : $@convention(thin) <τ_0_0> () -> @out τ_0_0
+// CHECK:   cond_br undef, bb2, bb1
+// CHECK: bb1:
+// CHECK:   br bb3
+// CHECK: bb2:
+// CHECK:   copy_addr [take] [[ALLOC]] to [initialization] %0 : $*T
+// CHECK:   br bb3
+// CHECK: bb3:
+// CHECK:   [[TAKEF:%.*]] = function_ref @takeIn : $@convention(thin) <τ_0_0> (@in τ_0_0) -> ()
+// CHECK:   %10 = tuple ()
+// CHECK:   %{{.*}} = apply [[TAKEF]]<T>(%1) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> ()
+// CHECK:   dealloc_stack [[ALLOC]] : $*T
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f190_testBBArgProjectOne'
+sil @f190_testBBArgProjectOne : $@convention(thin) <T> () -> @out T {
+bb0:
+  %get = function_ref @getOut : $@convention(thin) <τ_0_0>() -> @out τ_0_0
+  %get0 = apply %get<T>() : $@convention(thin) <τ_0_0>() -> @out τ_0_0
+  %get1 = apply %get<T>() : $@convention(thin) <τ_0_0>() -> @out τ_0_0
+  cond_br undef, bb1, bb2
+
+bb1:
+  br bb3(%get1 : $T)
+
+bb2:
+  br bb3(%get0 : $T)
+
+// %15
+bb3(%15 : $T):
+  %take = function_ref @takeIn : $@convention(thin) <τ_0_0>(@in τ_0_0) -> ()
+  %call = apply %take<T>(%get1) : $@convention(thin) <τ_0_0>(@in τ_0_0) -> ()
+  return %15 : $T
+}
+
+// Projection from incoming values. No interference.
+// CHECK-LABEL: sil @f200_testBBArgProjectIn : $@convention(thin) <T> (@in T, @in T) -> @out T {
+// CHECK: bb0(%0 : $*T, %1 : $*T, %2 : $*T):
+// CHECK:   cond_br undef, bb2, bb1
+// CHECK: bb1:
+// CHECK:   copy_addr [take] %1 to [initialization] %0 : $*T
+// CHECK:   br bb3
+// CHECK: bb2:
+// CHECK:   copy_addr [take] %2 to [initialization] %0 : $*T
+// CHECK:   br bb3
+// CHECK: bb3:
+// CHECK:   [[TAKEF:%.*]] = function_ref @takeIn : $@convention(thin) <τ_0_0> (@in τ_0_0) -> ()
+// CHECK:   %{{.*}} = tuple ()
+// CHECK:   %{{.*}} = apply [[TAKEF]]<T>(%2) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> ()
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f200_testBBArgProjectIn'
+sil @f200_testBBArgProjectIn : $@convention(thin) <T> (@in T, @in T) -> @out T {
+bb0(%0 : $T, %1 : $T):
+  cond_br undef, bb1, bb2
+
+bb1:
+  br bb3(%1 : $T)
+
+bb2:
+  br bb3(%0 : $T)
+
+// %15
+bb3(%15 : $T):
+  %take = function_ref @takeIn : $@convention(thin) <τ_0_0>(@in τ_0_0) -> ()
+  %call = apply %take<T>(%1) : $@convention(thin) <τ_0_0>(@in τ_0_0) -> ()
+  return %15 : $T
+}
+
+// Test switching on a single opaque value.
+// CHECK-LABEL: sil @f210_testSwitchEnum : $@convention(method) <T> (@in Optional<T>, @inout T) -> () {
+// CHECK: bb0(%0 : $*Optional<T>, %1 : $*T):
+// CHECK:   switch_enum_addr %0 : $*Optional<T>, case #Optional.some!enumelt.1: [[SOMEBB:bb[0-9]+]], case #Optional.none!enumelt: [[NONEBB:bb[0-9]+]]
+// CHECK: [[NONEBB]]:
+// CHECK:   br [[RETBB:bb[0-9]+]]
+// CHECK: [[SOMEBB]]:
+// CHECK:   [[CAST:%.*]] = unchecked_take_enum_data_addr %0 : $*Optional<T>, #Optional.some!enumelt.1
+// CHECK:   copy_addr [take] [[CAST]] to [initialization] %1 : $*T
+// CHECK:   br [[RETBB]]
+// CHECK: [[RETBB]]:
+// CHECK:   %{{.*}} = tuple ()
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f210_testSwitchEnum'
+sil @f210_testSwitchEnum : $@convention(method) <T> (@in Optional<T>, @inout T) -> () {
+bb0(%0 : $Optional<T>, %1 : $*T):
+  switch_enum %0 : $Optional<T>, case #Optional.some!enumelt.1: bb2, case #Optional.none!enumelt: bb1
+
+bb1:
+  br bb3
+
+bb2(%14 : $T):
+  store %14 to %1 : $*T
+  br bb3
+
+bb3:
+  %31 = tuple ()
+  return %31 : $()
+}
+
+enum Mixed<T> {
+  case i(Int)
+  case t(T)
+  case o(AnyObject)
+};
+
+// f220_testSwitchMixed
+// CHECK-LABEL: sil @f220_testSwitchMixed : $@convention(method) <T> (@in Mixed<T>, @inout Builtin.Int64, @inout T) -> () {
+// CHECK: bb0(%0 : $*Mixed<T>, %1 : $*Builtin.Int64, %2 : $*T):
+// CHECK:   copy_value_addr %0 : $*Mixed<T>
+// CHECK:   switch_enum_addr %0 : $*Mixed<T>, case #Mixed.i!enumelt.1: [[IBB:bb[0-9]+]], case #Mixed.t!enumelt.1: [[TBB:bb[0-9]+]], default [[DBB:bb[0-9]+]]
+// CHECK: [[DBB]]:
+// CHECK:   br [[RBB:bb[0-9]+]]
+// CHECK: [[TBB]]:
+// CHECK:   [[CAST:%.*]] = unchecked_take_enum_data_addr %0 : $*Mixed<T>, #Mixed.t!enumelt.1
+// CHECK:   copy_addr [take] [[CAST]] to [initialization] %2 : $*T
+// CHECK:   destroy_addr [[CAST]] : $*T
+// CHECK:   br [[RBB]]
+// CHECK: [[IBB]]:
+// CHECK:   [[CAST:%.*]] = unchecked_take_enum_data_addr %0 : $*Mixed<T>, #Mixed.i!enumelt.1
+// CHECK:   [[VAL:%.*]] = load [[CAST]] : $*Builtin.Int64
+// CHECK:   store [[VAL]] to %1 : $*Builtin.Int64
+// CHECK:   br [[RBB]]
+// CHECK: [[RBB]]:
+// CHECK:   destroy_addr %0 : $*Mixed<T>
+// CHECK:   %{{.*}} = tuple ()
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f220_testSwitchMixed'
+sil @f220_testSwitchMixed : $@convention(method) <T> (@in Mixed<T>, @inout Int, @inout T) -> () {
+bb0(%0 : $Mixed<T>, %1 : $*Int, %2 : $*T):
+  %3 = copy_value %0 : $Mixed<T>
+  switch_enum %3 : $Mixed<T>, case #Mixed.i!enumelt.1: bb1, case #Mixed.t!enumelt.1: bb2, default bb3
+
+bb1(%13 : $Int):
+  store %13 to %1 : $*Int
+  br bb4
+
+bb2(%14 : $T):
+  store %14 to %2 : $*T
+  destroy_value %14 : $T
+  br bb4
+
+bb3:
+  br bb4
+
+bb4:
+  destroy_value %0 : $Mixed<T>
+  %31 = tuple ()
+  return %31 : $()
+}
+
+sil @throwsError : $@convention(thin) <T> (@in T) -> (@out T, @error Error)
+sil @returnInt : $@convention(thin) <T> (@in T) -> (Int, @error Error)
+sil @returnIntOut : $@convention(thin) <T> (@in T) -> (@out Int, @error Error)
+sil @returnTuple : $@convention(thin) <T> (@in T) -> (@out T, Int, @out Int, @out T, @error Error)
+
+// CHECK-LABEL: sil @f230_testTryApply : $@convention(thin) <T> (@in T) -> (@out T, @error Error) {
+// CHECK: bb0(%0 : $*T, %1 : $*T):
+// CHECK:   [[F:%.*]] = function_ref @throwsError : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @error Error)
+// CHECK:   try_apply [[F]]<T>(%0, %1) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @error Error), normal bb2, error bb1
+// CHECK: bb1([[E:%.*]] : $Error):
+// CHECK:   throw [[E]] : $Error
+// CHECK: bb2([[NONE:%.*]] : $()):
+// CHECK:   %{{.*}} = tuple ()
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f230_testTryApply'
+sil @f230_testTryApply : $@convention(thin) <T> (@in T) -> (@out T, @error Error) {
+bb0(%0 : $T):
+  %3 = function_ref @throwsError : $@convention(thin) <T> (@in T) -> (@out T, @error Error)
+  try_apply %3<T>(%0) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, @error Error), normal bb1, error bb2
+
+bb1(%5 : $T):
+  return %5 : $T
+
+bb2(%7 : $Error):
+  throw %7 : $Error
+}
+
+// CHECK-LABEL: sil @f240_testTryApplyDirect : $@convention(thin) <T> (@in T) -> (Builtin.Int64, @error Error) {
+// CHECK: bb0(%0 : $*T):
+// CHECK:   [[F:%.*]] = function_ref @returnInt : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (Builtin.Int64, @error Error)
+// CHECK:   try_apply [[F]]<T>(%0) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (Builtin.Int64, @error Error), normal bb2, error bb1
+// CHECK: bb1([[E:%.*]] : $Error):
+// CHECK:   throw [[E]] : $Error
+// CHECK: bb2([[V:%.*]] : $Builtin.Int64):
+// CHECK:   return [[V]] : $Builtin.Int64
+// CHECK-LABEL: } // end sil function 'f240_testTryApplyDirect'
+sil @f240_testTryApplyDirect : $@convention(thin) <T> (@in T) -> (Int, @error Error) {
+bb0(%0 : $T):
+  %3 = function_ref @returnInt : $@convention(thin) <T> (@in T) -> (Int, @error Error)
+  try_apply %3<T>(%0) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (Int, @error Error), normal bb1, error bb2
+
+bb1(%5 : $Int):
+  return %5 : $Int
+
+bb2(%7 : $Error):
+  throw %7 : $Error
+}
+
+// CHECK-LABEL: sil @f250_testTryApplyIndirect : $@convention(thin) <T> (@in T) -> (Builtin.Int64, @error Error) {
+// CHECK: bb0(%0 : $*T):
+// CHECK:   [[F:%.*]] = function_ref @returnIntOut : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out Builtin.Int64, @error Error)
+// CHECK:   [[OUT_I:%.*]] = alloc_stack $Builtin.Int64
+// CHECK:   try_apply %1<T>([[OUT_I]], %0) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out Builtin.Int64, @error Error), normal bb2, error bb1
+// CHECK: bb1([[E:%.*]] : $Error):
+// CHECK:   dealloc_stack [[OUT_I]] : $*Builtin.Int64
+// CHECK:   throw [[E]] : $Error
+// CHECK: bb2(%{{.*}} : $()):
+// CHECK:   [[V:%.*]] = load [[OUT_I]] : $*Builtin.Int64
+// CHECK:   dealloc_stack [[OUT_I]] : $*Builtin.Int64
+// CHECK:   return [[V]] : $Builtin.Int64
+// CHECK-LABEL: } // end sil function 'f250_testTryApplyIndirect'
+sil @f250_testTryApplyIndirect : $@convention(thin) <T> (@in T) -> (Int, @error Error) {
+bb0(%0 : $T):
+  %3 = function_ref @returnIntOut : $@convention(thin) <T> (@in T) -> (@out Int, @error Error)
+  try_apply %3<T>(%0) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out Int, @error Error), normal bb1, error bb2
+
+bb1(%5 : $Int):
+  return %5 : $Int
+
+bb2(%7 : $Error):
+  throw %7 : $Error
+}
+
+// CHECK-LABEL: sil @f260_testTryApplyTuple : $@convention(thin) <T> (@in T) -> (@out T, @error Error) {
+// CHECK: bb0(%0 : $*T, %1 : $*T):
+// CHECK:   [[OUT_T:%.*]] = alloc_stack $T
+// CHECK:   [[F:%.*]] = function_ref @returnTuple : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, Builtin.Int64, @out Builtin.Int64, @out τ_0_0, @error Error)
+// CHECK:   [[OUT_I:%.*]] = alloc_stack $Builtin.Int64
+// CHECK:   try_apply [[F]]<T>([[OUT_T]], [[OUT_I]], %0, %1) : $@convention(thin) <τ_0_0> (@in τ_0_0) -> (@out τ_0_0, Builtin.Int64, @out Builtin.Int64, @out τ_0_0, @error Error), normal bb2, error bb1
+// CHECK: bb1([[E:%.*]] : $Error):
+// CHECK:   dealloc_stack [[OUT_I]] : $*Builtin.Int64
+// CHECK:   dealloc_stack [[OUT_T]] : $*T
+// CHECK:   throw [[E]] : $Error
+// CHECK: bb2([[RESULT:%.*]] : $Builtin.Int64):
+// CHECK:   dealloc_stack [[OUT_I]] : $*Builtin.Int64
+// CHECK:   destroy_addr [[OUT_T]] : $*T
+// CHECK:   %{{.*}} = tuple ()
+// CHECK:   dealloc_stack [[OUT_T]] : $*T
+// CHECK:   return %{{.*}} : $()
+// CHECK-LABEL: } // end sil function 'f260_testTryApplyTuple'
+sil @f260_testTryApplyTuple : $@convention(thin) <T> (@in T) -> (@out T, @error Error) {
+bb0(%0 : $T):
+  %1 = function_ref @returnTuple : $@convention(thin) <T> (@in T) -> (@out T, Int, @out Int, @out T, @error Error)
+  try_apply %1<T>(%0) : $@convention(thin) <T> (@in T) -> (@out T, Int, @out Int, @out T, @error Error), normal bb1, error bb2
+
+bb1(%3 : $(T, Int, Int, T)):
+  %4 = tuple_extract %3 : $(T, Int, Int, T), 0
+  %5 = tuple_extract %3 : $(T, Int, Int, T), 1
+  %6 = tuple_extract %3 : $(T, Int, Int, T), 2
+  %7 = tuple_extract %3 : $(T, Int, Int, T), 3
+  destroy_value %4 : $T
+  return %7 : $T
+
+bb2(%9 : $Error):
+  throw %9 : $Error
 }
