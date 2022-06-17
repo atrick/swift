@@ -188,8 +188,8 @@ bool SemanticARCOptVisitor::performGuaranteedCopyValueOptimization(
   // block.
   {
     if (llvm::any_of(borrowScopeIntroducers, [&](BorrowedValue borrowScope) {
-          return !borrowScope.areUsesWithinTransitiveScope(
-              lr.getAllConsumingUses(), nullptr);
+          return
+            !borrowScope.areUsesWithinTransitiveScope(lr.getAllConsumingUses());
         })) {
       return false;
     }
@@ -218,7 +218,7 @@ bool SemanticARCOptVisitor::performGuaranteedCopyValueOptimization(
 
       if (llvm::any_of(borrowScopeIntroducers, [&](BorrowedValue borrowScope) {
             return !borrowScope.areUsesWithinTransitiveScope(
-                phiArgLR.getAllConsumingUses(), nullptr);
+                phiArgLR.getAllConsumingUses());
           })) {
         return false;
       }
