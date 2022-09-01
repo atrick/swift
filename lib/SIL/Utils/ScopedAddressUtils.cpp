@@ -160,8 +160,7 @@ void ScopedAddressValue::endScopeAtLivenessBoundary(
 }
 
 bool swift::hasOtherStoreBorrowsInLifetime(StoreBorrowInst *storeBorrow,
-                                           SSAPrunedLiveness *liveness,
-                                           DeadEndBlocks *deadEndBlocks) {
+                                           SSAPrunedLiveness *liveness) {
   SmallVector<StoreBorrowInst *, 4> otherStoreBorrows;
   // Collect all other store_borrows to the destination of \p storeBorrow
   for (auto *destUse : storeBorrow->getDest()->getUses()) {

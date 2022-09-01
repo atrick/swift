@@ -2336,15 +2336,14 @@ public:
   }
 
   bool checkScopedAddressUses(ScopedAddressValue scopedAddress,
-                              SSAPrunedLiveness *scopedAddressLiveness,
-                              DeadEndBlocks *deadEndBlocks) {
+                              SSAPrunedLiveness *scopedAddressLiveness) {
     SmallVector<Operand *, 4> uses;
     findTransitiveUsesForAddress(scopedAddress.value, &uses);
 
     // Check if the collected uses are well-scoped.
     for (auto *use : uses) {
       auto *user = use->getUser();
-      if (deadEndBlocks->isDeadEnd(user->getParent())) {
+      if (DEBlocks && DEBlocks->isDeadEnd(user->getParent())) {
         continue;
       }
       if (scopedAddress.isScopeEndingUse(use)) {
@@ -2563,12 +2562,12 @@ public:
         scopedAddress.computeTransitiveLiveness(scopedAddressLiveness);
     bool success = useKind == AddressUseKind::NonEscaping;
 
-    require(!success || checkScopedAddressUses(
-                            scopedAddress, &scopedAddressLiveness, &DEBlocks),
+    require(!success
+            || checkScopedAddressUses(scopedAddress, &scopedAddressLiveness),
             "Ill formed store_borrow scope");
 
-    require(!success || !hasOtherStoreBorrowsInLifetime(
-                            SI, &scopedAddressLiveness, &DEBlocks),
+    require(!success
+            || !hasOtherStoreBorrowsInLifetime(SI, &scopedAddressLiveness),
             "A store_borrow cannot be nested within another "
             "store_borrow to its destination");
 
