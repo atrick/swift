@@ -142,8 +142,7 @@ void ScopedAddressValue::endScopeAtLivenessBoundary(
 }
 
 bool swift::hasOtherStoreBorrowsInLifetime(StoreBorrowInst *storeBorrow,
-                                           PrunedLiveness *liveness,
-                                           DeadEndBlocks *deadEndBlocks) {
+                                           PrunedLiveness *liveness) {
   SmallVector<StoreBorrowInst *, 4> otherStoreBorrows;
   // Collect all other store_borrows to the destination of \p storeBorrow
   for (auto *destUse : storeBorrow->getDest()->getUses()) {
@@ -186,14 +185,13 @@ bool swift::extendStoreBorrow(StoreBorrowInst *sbi,
   // store_borrow extension is possible only when there are no other
   // store_borrows to the same destination within the store_borrow's lifetime
   // built from newUsers.
-  if (hasOtherStoreBorrowsInLifetime(sbi, &storeBorrowLiveness,
-                                     deadEndBlocks)) {
+  if (hasOtherStoreBorrowsInLifetime(sbi, &storeBorrowLiveness)) {
     return false;
   }
 
   InstModCallbacks tempCallbacks = callbacks;
   InstructionDeleter deleter(std::move(tempCallbacks));
-  GuaranteedOwnershipExtension borrowExtension(deleter, *deadEndBlocks);
+  GuaranteedOwnershipExtension borrowExtension(deleter);
   auto status = borrowExtension.checkBorrowExtension(
       BorrowedValue(sbi->getSrc()), newUses);
   if (status == GuaranteedOwnershipExtension::Invalid) {

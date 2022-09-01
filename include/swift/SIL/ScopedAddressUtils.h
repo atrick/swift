@@ -105,8 +105,7 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
 /// Returns true if there are other store_borrows enclosed within a store_borrow
 /// \p sbi's scope
 bool hasOtherStoreBorrowsInLifetime(StoreBorrowInst *sbi,
-                                    PrunedLiveness *liveness,
-                                    DeadEndBlocks *deadEndBlocks);
+                                    PrunedLiveness *liveness);
 
 /// Extend the store_borrow \p sbi's scope such that it encloses \p newUsers.
 bool extendStoreBorrow(StoreBorrowInst *sbi,
