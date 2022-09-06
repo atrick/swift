@@ -48,6 +48,11 @@ static llvm::cl::opt<bool>
 ParseSerializedSIL("parse-serialized-sil",
                    llvm::cl::desc("Parse the output of a serialized module"));
 
+// Option for testing -silgen-cleanup -enable-complete-ossa
+static llvm::cl::opt<bool>
+ParseIncompleteOSSA("parse-incomplete-ossa",
+                    llvm::cl::desc("Parse OSSA with incomplete lifetimes"));
+
 //===----------------------------------------------------------------------===//
 // SILParserState implementation
 //===----------------------------------------------------------------------===//
@@ -6959,7 +6964,7 @@ bool SILParserState::parseDeclSIL(Parser &P) {
 
   // If SIL parsing succeeded, verify the generated SIL.
   if (!P.Diags.hadAnyError())
-    FunctionState.F->verify();
+    FunctionState.F->verify(/*SingleFunction=*/true, !ParseIncompleteOSSA);
 
   return false;
 }
