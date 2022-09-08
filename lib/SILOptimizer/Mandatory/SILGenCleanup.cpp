@@ -80,6 +80,10 @@ bool SILGenCleanup::completeOSSALifetimes(SILFunction *function) {
   if (!EnableCompleteOSSALifetimes)
     return false;
 
+  if (function->hasName("$ss18_CocoaArrayWrapperV13_copyContents12initializings16IndexingIteratorVyABG_SitSryyXlG_tF")) {
+    function->dump();
+  }
+
   bool changed = false;
 
   // Lifetimes must be completed inside out (bottom-up in the CFG).
@@ -130,7 +134,10 @@ void SILGenCleanup::run() {
       auto invalidKind = SILAnalysis::InvalidationKind::Instructions;
       invalidateAnalysis(&function, invalidKind);
     }
-    function.verifyOwnership();
+    //!!!
+    function.verify();
+    
+    //!!! just do this: function.verifyOwnership();
   }
 }
 

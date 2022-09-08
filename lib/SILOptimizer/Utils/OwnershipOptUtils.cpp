@@ -166,21 +166,29 @@ static SILInstruction *endOSSALifetime(SILValue value, SILBuilder &builder) {
 bool swift::completeNonLexicalLifetime(SILValue value) {
   assert(!value->isLexical());
 
+  //!!!
+  // bool trace = value->getFunction()->hasName("$ss18_CocoaArrayWrapperV13_copyContents12initializings16IndexingIteratorVyABG_SitSryyXlG_tF");
+  
   bool changed = false;
 
   auto endLifetimeAtEdge = [&](SILBasicBlock *edge) {
     SILBuilderWithScope builder(edge->begin());
-    endOSSALifetime(value, builder);
+    auto *i = endOSSALifetime(value, builder);
+    if (trace)
+      i->dump();
     changed = true;
   };
   auto endLifetimeAtUser = [&](SILInstruction *user) {
-    SILBuilderWithScope::insertAfter(user, [value](SILBuilder &builder) {
-      endOSSALifetime(value, builder);
+    SILBuilderWithScope::insertAfter(user, [value, trace](SILBuilder &builder) {
+      auto *i = endOSSALifetime(value, builder);
+      if (trace)
+        i->dump();
     });
     changed = true;
   };
   visitNonLifetimeEndingBoundary(value, endLifetimeAtEdge, endLifetimeAtUser);
 
+  //!!! trace = false;
   return changed;
 }
 
