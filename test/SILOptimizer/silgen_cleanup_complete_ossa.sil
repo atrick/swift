@@ -68,3 +68,12 @@ bb5:
   %36 = tuple ()
   return %36 : $()
 }
+
+// CHECK-LABEL: sil [ossa] @testExistentialLifetime : $@convention(thin) (@owned any P) -> @owned any AnyObject {
+// CHECK-NOT: destroy
+sil [ossa] @testExistentialLifetime : $@convention(thin) (@owned any P) -> @owned any AnyObject {
+bb0(%0 : @owned $any P):
+  %68 = open_existential_ref %0 : $any P to $@opened("34B79428-2E49-11ED-901A-8AC134504E1C", any P) Self
+  %69 = init_existential_ref %68 : $@opened("34B79428-2E49-11ED-901A-8AC134504E1C", any P) Self : $@opened("34B79428-2E49-11ED-901A-8AC134504E1C", any P) Self, $AnyObject
+  return %69 : $AnyObject
+}
