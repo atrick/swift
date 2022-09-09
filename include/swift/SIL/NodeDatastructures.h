@@ -179,7 +179,6 @@ public:
 class ValueSetVector {
   StackList<SILValue> vector;
   ValueSet set;
-
 public:
   using iterator = typename StackList<SILValue>::iterator;
 
