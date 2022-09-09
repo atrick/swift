@@ -36,7 +36,7 @@
 using namespace swift;
 
 //===----------------------------------------------------------------------===//
-//                   Basic scope and lifetime extension API
+//                            Lifetime Completion
 //===----------------------------------------------------------------------===//
 
 // When computing lifetime for the initial value, %v1, transitively include all
@@ -162,6 +162,7 @@ static SILInstruction *endOSSALifetime(SILValue value, SILBuilder &builder) {
   return builder.createEndBorrow(loc, value);
 }
 
+//!!! FIXME: must call visitAdjacentReborrowsOfPhi
 bool swift::completeNonLexicalLifetime(SILValue value) {
   assert(!value->isLexical());
 
@@ -210,6 +211,92 @@ bool swift::completeLexicalLifetime(SILValue value) {
   }
   return changed;
 }
+
+// TODO: create a fast check for 'mayEndLifetime(SILInstruction *)'. Verify that
+// it returns true for every instruction that has a lifetime-ending operand.
+void UnreachableLifetimeCompletion::visitUnreachableInst(
+    SILInstruction *instruction) {
+  auto *block = instruction->getParent();
+  bool inReachableBlock = !unreachableBlocks.contains(block);
+  // If this instruction's block is already marked unreachable, and
+  // updatingLifetimes is not yet set, then this instruction will be visited
+  // again later when propagating unreachable blocks.
+  if (!inReachableBlock && !updatingLifetimes)
+    return;
+
+  for (Operand &operand : instruction->getAllOperands()) {
+    if (!operand.isLifetimeEnding())
+      continue;
+
+    SILValue value = operand.get();
+    SILBasicBlock *defBlock = value->getParentBlock();
+    if (unreachableBlocks.contains(defBlock))
+      continue;
+
+    auto *def = value->getDefiningInstruction();
+    if (def && unreachableInsts.contains(def))
+      continue;
+
+    // The operand's definition is still reachable and its lifetime ends on a
+    // newly unreachable path.
+    //
+    // Note: The arguments of a no-return try_apply may still appear reachable
+    // here because the try_apply itself is never visited as unreachable, hence
+    // its successor blocks are not marked . But it
+    // seems harmless to recompute their lifetimes.
+
+    // Insert this unreachable instruction in unreachableInsts if its parent
+    // block is not already marked unreachable.
+    if (inReachableBlock) {
+      unreachableInsts.insert(instruction);
+    }
+    incompleteValues.insert(value);
+
+    // Add unreachable successors to the forward traversal worklist.
+    if (auto *term = dyn_cast<TermInst>(instruction)) {
+      for (auto *succBlock : term->getSuccessorBlocks()) {
+        if (llvm::all_of(succBlock->getPredecessorBlocks(),
+                         [&](SILBasicBlock *predBlock) {
+                           if (predBlock == block)
+                             return true;
+
+                           return unreachableBlocks.contains(predBlock);
+                         })) {
+          unreachableBlocks.insert(succBlock);
+        }
+      }
+    }
+  }
+}
+
+//!!! we don't know the order of the incompleteValues, so completeOSSLifetime
+//!!! needs to be changed to recursively complete borrowed values.
+bool UnreachableLifetimeCompletion::completeLifetimes() {
+  assert(!updatingLifetimes && "don't call this more than once");
+  updatingLifetimes = true;
+
+  // Now that all unreachable terminator instructions have been visited,
+  // propagate unreachable blocks.
+  for (auto blockIt = unreachableBlocks.begin();
+       blockIt != unreachableBlocks.end(); ++blockIt) {
+    auto *block = *blockIt;
+    for (auto &instruction : *block) {
+      visitUnreachableInst(&instruction);
+    }
+  }
+
+  bool changed = false;
+  for (auto value : incompleteValues) {
+    if (completeOSSALifetime(value) == LifetimeCompletion::WasCompleted) {
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+//===----------------------------------------------------------------------===//
+//                   Basic scope and lifetime extension API
+//===----------------------------------------------------------------------===//
 
 void swift::extendOwnedLifetime(SILValue ownedValue,
                                 PrunedLivenessBoundary &lifetimeBoundary,
