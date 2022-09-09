@@ -21,6 +21,7 @@
 
 #include "swift/Basic/Defer.h"
 #include "swift/SIL/BasicBlockUtils.h"
+#include "swift/SIL/NodeDatastructures.h"
 #include "swift/SIL/OwnershipUtils.h"
 #include "swift/SIL/PrunedLiveness.h"
 #include "swift/SIL/SILModule.h"
@@ -34,6 +35,10 @@ inline bool requiresOSSACleanup(SILValue v) {
          v->getOwnershipKind() != OwnershipKind::None &&
          v->getOwnershipKind() != OwnershipKind::Unowned;
 }
+
+//===----------------------------------------------------------------------===//
+//                            Lifetime Completion
+//===----------------------------------------------------------------------===//
 
 /// Insert a lifetime-ending instruction on every path to complete the OSSA
 /// lifetime of \p value.
@@ -73,6 +78,10 @@ inline LifetimeCompletion completeOSSALifetime(SILValue value) {
              ? LifetimeCompletion::WasCompleted
              : LifetimeCompletion::AlreadyComplete;
 }
+
+//===----------------------------------------------------------------------===//
+//                   Basic scope and lifetime extension API
+//===----------------------------------------------------------------------===//
 
 /// Rewrite the lifetime of \p ownedValue to match \p lifetimeBoundary. This may
 /// insert copies at forwarding consumes, including phis.
@@ -185,6 +194,42 @@ public:
                                 ArrayRef<Operand *> newUses);
 
   void transform(Status status);
+};
+
+//===----------------------------------------------------------------------===//
+// UnreachableLifetimeCompletion
+//===----------------------------------------------------------------------===//
+
+/// Fixup OSSA before deleting an unreachable code path.
+///
+/// Only needed when a code path reaches a no-return function, making the
+/// path now partially unreachable. Conditional branch folding requires no fixup
+/// because it causes the entire path to become unreachable.
+class UnreachableLifetimeCompletion {
+  BasicBlockSetVector unreachableBlocks;
+  InstructionSet unreachableInsts; // not including those in unreachableBlocks
+  ValueSetVector incompleteValues;
+  bool updatingLifetimes = false;
+
+public:
+  UnreachableLifetimeCompletion(SILFunction *function)
+      : unreachableBlocks(function), unreachableInsts(function),
+        incompleteValues(function) {}
+
+  /// Record information about this unreachable instruction and return true if
+  /// ends any simple OSSA lifetimes.
+  ///
+  /// Note: this must be called in forward order so that lifetime completion
+  /// runs from the inside out.
+  void visitUnreachableInst(SILInstruction *instruction);
+
+  void visitUnreachableBlock(SILBasicBlock *block) {
+    unreachableBlocks.insert(block);
+  }
+
+  /// Complete the lifetime of any value defined outside of the unreachable
+  /// region that was previously destroyed in the unreachable region.
+  bool completeLifetimes();
 };
 
 //===----------------------------------------------------------------------===//
