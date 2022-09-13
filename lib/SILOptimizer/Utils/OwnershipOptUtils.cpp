@@ -38,7 +38,48 @@ using namespace swift;
 //                            Lifetime Completion
 //===----------------------------------------------------------------------===//
 
-/// Visit all points on the value's lifetime boundary that do not its lifetime.
+void OSSALifetimeCompletion::recursivelyComputeLiveness(
+    SILValue def, PrunedLiveness &liveness) {
+  if (def->use_empty())
+    return;
+
+  if ((SILPhiArgument *arg = dyn_cast<SILPhiArgument>(value)) && arg->isPhi()) {
+    visitAdjacentReborrowsOfPhi(arg, [&](SILPhiArgument *reborrow) {
+      recursivelyComputeLiveness(reborow);
+    });
+  }
+
+  for (Operand *use : def->getUses()) {
+    switch (use->getOperandOwnership()) {
+    default:
+      updateForUse(use->getUser(), use->isLifetimeEnding());
+      break;
+    case OperandOwnership::NonUse:
+      break;
+    case OperandOwnership::Borrow:
+    case OperandOwnership::Reborrow: {
+      BorrowingOperand borrowOper(use);
+      auto borrowedValue = borrowOper.getBorrowIntroducingUserResult();
+
+      // Recursively complete the borrow lifetime
+      completeOSSLifetime(borrowedValue.value);
+
+      // Visit scope-ending uses only after completing the borrow lifetime
+      //
+      //!!! what if an owned value dominates a reborrow?
+      //
+      //!!! this doesn't make sense for reborrows when there is an adjacent
+      //!!! owned phi.
+      borrowOper.visitScopeEndingUses([&](Operand *end) {
+        updateForUse(end->getUser(), /*lifetimeEnding*/ false);
+      });
+    }
+    }
+  }
+}
+
+/// Visit all points on the value's lifetime boundary that do not end its
+/// lifetime.
 ///
 /// \p value must be an owned value or must introduce a local borrow scope.
 ///
@@ -49,6 +90,7 @@ static void
 visitNonLifetimeEndingBoundary(SILValue value,
                                function_ref<void(SILBasicBlock *)> visitEdge,
                                function_ref<void(SILInstruction *)> visitUser) {
+
   if (value->getOwnershipKind() != OwnershipKind::Owned) {
     BorrowedValue borrowedValue(value);
     assert(borrowedValue && borrowedValue.isLocalScope());
@@ -57,7 +99,10 @@ visitNonLifetimeEndingBoundary(SILValue value,
   SmallVector<SILBasicBlock *> discoveredBlocks;
   PrunedLiveness liveness(&discoveredBlocks);
   PrunedLivenessBoundary boundary;
-  liveness.computeSSALiveness(value);
+
+  liveness.initializeDefBlock(value->getParentBlock());
+  recursivelyComputeLiveness(value, liveness);
+
   boundary.compute(liveness);
   if (boundary.empty()) {
     auto *def = value->getDefiningInstruction();
@@ -88,7 +133,6 @@ static SILInstruction *endOSSALifetime(SILValue value, SILBuilder &builder) {
   return builder.createEndBorrow(loc, value);
 }
 
-//!!! FIXME: must call visitAdjacentReborrowsOfPhi
 bool swift::completeNonLexicalLifetime(SILValue value) {
   assert(!value->isLexical());
 
