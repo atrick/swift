@@ -38,17 +38,46 @@ using namespace swift;
 //                            Lifetime Completion
 //===----------------------------------------------------------------------===//
 
+// Handle dominated reborrows:
+//     %v1 = ...
+//     cond_br bb1, bb2
+//   bb1:
+//     %b1 = begin_borrow %v1
+//     br bb3(%b1)
+//   bb2:
+//     %b2 = begin_borrow %v1
+//     br bb3(%b2)
+//   bb3(%phi1):
+//     %u1 = %phi1
+//     end_borrow %phi1
+//     %k1 = destroy_value %v1 // must be below end_borrow %phi1
+//
+// Handle separate, adjacent reborrows:
+//   bb1:
+//     %v1 = ...
+//     %b1 = begin_borrow %v1
+//     br bb3(%b1)
+//   bb2:
+//     %v2 = ...
+//     %b2 = begin_borrow %v2
+//     br bb3(%b2)
+//   bb3(%phi1, %phi2):
+//     %u1 = %phi1
+//     end_borrow %phi1
+//     %k1 = destroy_value %phi1
+//
+// When computing lifetime for the initial value, %v1, transitively include all
+// dominated reborrows: %phi1 in the dominated reborrow case.
+//
+// When computing lifetime for an the a phi, %phi2, transitively include all
+// "adjacent reborrows": %phi1 in the separate reborrow case.
 void OSSALifetimeCompletion::recursivelyComputeLiveness(
     SILValue def, PrunedLiveness &liveness) {
-  if (def->use_empty())
-    return;
-
   if ((SILPhiArgument *arg = dyn_cast<SILPhiArgument>(value)) && arg->isPhi()) {
     visitAdjacentReborrowsOfPhi(arg, [&](SILPhiArgument *reborrow) {
       recursivelyComputeLiveness(reborow);
     });
   }
-
   for (Operand *use : def->getUses()) {
     switch (use->getOperandOwnership()) {
     default:
