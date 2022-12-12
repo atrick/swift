@@ -301,12 +301,21 @@ splitAggregateLoad(LoadOperation loadInst, CanonicalizeInstruction &pass) {
     }
     pass.notifyNewInstruction(**lastNewLoad);
 
-    // FIXME: This drops debug info at -Onone load-splitting is required at
-    // -Onone for exclusivity diagnostics. Fix this by
+    // TODO: This drops debug info. load-splitting cannot simply be disabled at
+    // -Onone because that would cause exclusivity diagnostic to report errors
+    // in more cases, breaking source.
+    //
+    // Currently, at -Onone we move the debug_value from the loaded aggregate to
+    // the address. This is likely correct, but it is possible that the loaded
+    // value represents a different variable than the address location. If the
+    // original address is rewritten the debug value could be incorrect.
+    //
+    // Fix this situation by:
     // 
     // 1. At -Onone, preserve the original load when pass.preserveDebugInfo is
-    // true, but moving it out of its current access scope and into an "unknown"
-    // access scope, which won't be enforced as an exclusivity violation.
+    // true, but move it out of its current access scope and into an "unknown"
+    // access scope, which won't be enforced as an exclusivity
+    // violation.
     //
     // 2. At -O, create "debug fragments" recover as much debug info as possible
     // by creating debug_value fragments for each new partial load. Currently
