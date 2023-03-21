@@ -155,14 +155,6 @@ class DeadEndBlocks;
 /// not dominated by a def block, then liveness will include the entry block,
 /// as if defined by a function argument
 ///
-/// We allow for multiple bits of liveness information to be tracked by
-/// internally using a SmallBitVector. The multiple bit tracking is useful when
-/// tracking state for multiple fields of the same root value. To do this, we
-/// actually track 2 bits per actual needed bit so we can represent 3 Dead,
-/// LiveOut, LiveWithin. This was previously unnecessary since we could just
-/// represent dead by not having liveness state for a block. With multiple bits
-/// possible this is no longer true.
-///
 /// TODO: For efficiency, use BasicBlockBitfield rather than SmallDenseMap.
 class PrunedLiveBlocks {
 public:
@@ -190,91 +182,32 @@ public:
     LiveOut = 3,
   };
 
-  /// A bit vector that stores information about liveness. This is composed
-  /// with SmallBitVector since it contains two bits per liveness so that it
-  /// can represent 3 states, Dead, LiveWithin, LiveOut. We take advantage of
-  /// their numeric values to make testing easier \see documentation on IsLive.
-  class LivenessSmallBitVector {
-    SmallBitVector bits;
-
-  public:
-    LivenessSmallBitVector() : bits() {}
-
-    void init(unsigned numBits) {
-      assert(bits.size() == 0);
-      assert(numBits != 0);
-      bits.resize(numBits * 2);
-    }
-
-    unsigned size() const { return bits.size() / 2; }
-
-    IsLive getLiveness(unsigned bitNo) const {
-      if (!bits[bitNo * 2])
-        return IsLive::Dead;
-      return bits[bitNo * 2 + 1] ? LiveOut : LiveWithin;
-    }
-
-    /// Returns the liveness in \p resultingFoundLiveness. We only return the
-    /// bits for endBitNo - startBitNo.
-    void getLiveness(unsigned startBitNo, unsigned endBitNo,
-                     SmallVectorImpl<IsLive> &resultingFoundLiveness) const {
-      unsigned actualStartBitNo = startBitNo * 2;
-      unsigned actualEndBitNo = endBitNo * 2;
-
-      for (unsigned i = actualStartBitNo, e = actualEndBitNo; i != e; i += 2) {
-        if (!bits[i]) {
-          resultingFoundLiveness.push_back(Dead);
-          continue;
-        }
-
-        resultingFoundLiveness.push_back(bits[i + 1] ? LiveOut : LiveWithin);
-      }
-    }
-
-    void setLiveness(unsigned startBitNo, unsigned endBitNo, IsLive isLive) {
-      for (unsigned i = startBitNo * 2, e = endBitNo * 2; i != e; i += 2) {
-        bits[i] = isLive & 1;
-        bits[i + 1] = isLive & 2;
-      }
-    }
-
-    void setLiveness(unsigned bitNo, IsLive isLive) {
-      setLiveness(bitNo, bitNo + 1, isLive);
-    }
-  };
-
 private:
-  /// Map all blocks in which current def is live to a SmallBitVector indicating
-  /// whether the value represented by said bit is also liveout of the block.
-  llvm::SmallDenseMap<SILBasicBlock *, LivenessSmallBitVector, 4> liveBlocks;
-
-  /// Number of bits of liveness to track. By default 1. Used to track multiple
-  /// liveness bits.
-  unsigned numBitsToTrack;
+  /// Map all blocks to an IsLive state.
+  BasicBlockBitfield liveBlocks;
 
   /// Optional vector of live blocks for clients that deterministically iterate.
   SmallVectorImpl<SILBasicBlock *> *discoveredBlocks;
 
-  /// Once the first use has been seen, no definitions can be added.
-  SWIFT_ASSERT_ONLY_DECL(bool seenUse = false);
+  /// Once the first def has been initialized, uses can be added.
+  SWIFT_ASSERT_ONLY_DECL(bool hasDef = false);
+
+  /// Once the first use has been seen, liveness is no longer empty, and no
+  /// definitions can be added.
+  bool seenUse = false;
 
 public:
-  PrunedLiveBlocks(unsigned numBitsToTrack,
-                   SmallVectorImpl<SILBasicBlock *> *discoveredBlocks = nullptr)
-      : numBitsToTrack(numBitsToTrack), discoveredBlocks(discoveredBlocks) {
+  PrunedLiveBlocks(SmallVectorImpl<SILBasicBlock *> *discoveredBlocks = nullptr)
+      : discoveredBlocks(discoveredBlocks) {
     assert(!discoveredBlocks || discoveredBlocks->empty());
   }
 
-  unsigned getNumBitsToTrack() const { return numBitsToTrack; }
+  bool empty() const { return seenUse; }
 
-  bool empty() const { return liveBlocks.empty(); }
-
-  void clear() {
-    liveBlocks.clear();
-    SWIFT_ASSERT_ONLY(seenUse = false);
-  }
-
-  unsigned numLiveBlocks() const { return liveBlocks.size(); }
+  SWIFT_ASSERT_ONLY_DECL(void invalidate() {
+      hasDef = false;
+      seenUse = false;
+    })
 
   /// If the constructor was provided with a vector to populate, then this
   /// returns the list of all live blocks with no duplicates.
@@ -282,23 +215,22 @@ public:
     return *discoveredBlocks;
   }
 
-  void initializeDefBlock(SILBasicBlock *defBB, unsigned bitNo) {
-    markBlockLive(defBB, bitNo, LiveWithin);
+  void initializeDefBlock(SILBasicBlock *defBB) {
+    markBlockLive(defBB, LiveWithin);
   }
 
-  void initializeDefBlock(SILBasicBlock *defBB, unsigned startBitNo,
-                          unsigned endBitNo) {
-    markBlockLive(defBB, startBitNo, endBitNo, LiveWithin);
+  void initializeDefBlock(SILBasicBlock *defBB) {
+    markBlockLive(defBB, LiveWithin);
   }
 
   /// Update this liveness result for a single use.
-  IsLive updateForUse(SILInstruction *user, unsigned bitNo) {
+  IsLive updateForUse(SILInstruction *user) {
     auto *block = user->getParent();
-    auto liveness = getBlockLiveness(block, bitNo);
+    auto liveness = getBlockLiveness(block);
     if (liveness != Dead)
       return liveness;
-    computeScalarUseBlockLiveness(block, bitNo);
-    return getBlockLiveness(block, bitNo);
+    computeScalarUseBlockLiveness(block);
+    return getBlockLiveness(block);
   }
 
   /// Update this range of liveness results for a single use.
@@ -491,8 +423,6 @@ public:
     liveBlocks.clear();
     users.clear();
   }
-
-  unsigned numLiveBlocks() const { return liveBlocks.numLiveBlocks(); }
 
   /// If the constructor was provided with a vector to populate, then this
   /// returns the list of all live blocks with no duplicates.
