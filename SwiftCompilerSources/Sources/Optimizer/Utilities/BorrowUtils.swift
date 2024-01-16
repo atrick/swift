@@ -289,8 +289,12 @@ enum BeginBorrowValue {
       let inst = operand.instruction as! SingleValueInstruction
       self = BeginBorrowValue(inst)!
     case is BranchInst:
-      guard let phi = Phi(using: operand) else { return nil }
-      guard phi.isReborrow else { return nil }
+      guard let phi = Phi(using: operand) else {
+        return nil
+      }
+      guard phi.isReborrow else {
+        return nil
+      }
       self = .reborrow(phi)
     default:
       return nil
@@ -723,8 +727,9 @@ private struct EnclosingValues {
                                in enclosingValues: inout Stack<Value>,
                                _ cache: inout BorrowIntroducers.Cache) {
 
-    guard visitedReborrows.insert(reborrow.value) else { return }
-
+    guard visitedReborrows.insert(reborrow.value) else {
+      return
+    }
     // avoid duplicates in the enclosingValues set.
     var pushedEnclosingValues = ValueSet(context)
     defer { pushedEnclosingValues.deinitialize() }
