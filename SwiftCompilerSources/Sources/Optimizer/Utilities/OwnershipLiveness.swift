@@ -163,13 +163,14 @@ struct InteriorUseWalker: OwnershipUseVisitor, AddressUseVisitor {
   let context: FunctionPassContext
   var _context: Context { context }
 
-  let function: Function
   let definingValue: Value
   let useVisitor: (Operand) -> WalkResult
 
   var innerScopeHandler: InnerScopeHandler? = nil
 
   var unenclosedPhis: [Phi] = []
+
+  var function: Function { definingValue.parentFunction }
 
   /// If any interior pointer may escape, then record the first instance
   /// here. This immediately aborts the walk, so further instances are
@@ -197,7 +198,6 @@ struct InteriorUseWalker: OwnershipUseVisitor, AddressUseVisitor {
     visitor: @escaping (Operand) -> WalkResult) {
     assert(!definingValue.type.isAddress, "address values have no ownership")
     self.context = context
-    self.function = definingValue.parentFunction
     self.definingValue = definingValue
     self.useVisitor = visitor
     self.visited = ValueSet(context)
@@ -1053,5 +1053,5 @@ let addressUseTest = FunctionTest("address_use_test") {
   print(function)
   print("Uses of address: \(address)")
   var printer = AddressUsePrinter(_context: context)
-  printer.walkDownUses(ofAddress: address)
+  _ = printer.walkDownUses(ofAddress: address)
 }

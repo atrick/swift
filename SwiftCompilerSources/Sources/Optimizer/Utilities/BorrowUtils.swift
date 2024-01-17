@@ -407,16 +407,16 @@ private struct BorrowIntroducers {
   }
 
   private mutating func push(_ introducer: Value,
-    introducers: inout Stack<Value>) {
+    in introducers: inout Stack<Value>) {
     if visitedIntroducers.insert(introducer.hashable).inserted {
       introducers.push(introducer)
     }
   }
 
   private mutating func push<S: Sequence>(contentsOf other: S,
-    introducers: inout Stack<Value>) where S.Element == Value {
+    in introducers: inout Stack<Value>) where S.Element == Value {
     for elem in other {
-      push(elem, introducers: &introducers)
+      push(elem, in: &introducers)
     }
   }
 
@@ -433,7 +433,7 @@ private struct BorrowIntroducers {
     // 'introducers' to avoid duplicates and avoid exponential
     // recursion on aggregates.
     if let cachedIntroducers = cache.valueIntroducers[value.hashable] {
-      cachedIntroducers.forEach { push($0, introducers: &introducers) }
+      push(contentsOf: cachedIntroducers, in: &introducers)
       return
     }
     introducers.withMarker(
@@ -455,7 +455,7 @@ private struct BorrowIntroducers {
       return
 
     case .owned:
-      push(value, introducers: &introducers);
+      push(value, in: &introducers);
       return
 
     case .guaranteed:
@@ -464,7 +464,7 @@ private struct BorrowIntroducers {
     // BeginBorrowedValue handles the initial scope introducers: begin_borrow,
     // load_borrow, & reborrow.
     if BeginBorrowValue(value) != nil {
-      push(value, introducers: &introducers)
+      push(value, in: &introducers)
       return
     }
     // Handle guaranteed forwarding phis
@@ -534,7 +534,7 @@ private struct BorrowIntroducers {
       // Map the incoming introducers to an outer-adjacent phi if one exists.
       push(contentsOf: mapToPhi(predecessor: pred,
                                 incomingValues: incomingIntroducers),
-           introducers: &introducers)
+           in: &introducers)
     }
     // Remove this phi from the pending set. This phi may be visited
     // again at a different level of phi recursion. In that case, we
