@@ -12,7 +12,7 @@
 //
 // Utilities that model Ownership SSA (OSSA) borrow scopes.
 //
-// A borrowing instruction borrows one or more operands over a new
+// A BorrowingInstruction borrows one or more operands over a new
 // borrow scope, up to its scope-ending uses. This is typically
 // checked during a def-use walk.
 //
@@ -21,7 +21,7 @@
 //   ...                                 // borrow scope
 //   end_borrow %store                   // scope-ending use
 //
-// A begin-borrow value introduces a guaranteed OSSA lifetime. It
+// A BeginBorrowValue introduces a guaranteed OSSA lifetime. It
 // begins a new borrow scope that ends at its scope-ending uses. A
 // begin-borrow value may be defined by a borrowing instruction:
 //
@@ -29,13 +29,13 @@
 //   ...                                 // borrow scope
 //   end_borrow %begin                   // scope-ending use
 //
-// Other begin-borrow cases, however, like block arguments and
-// `load_borrow`, are not borrowing instructions. Begin-borrow values
+// Other kinds of BeginBorrowValues, however, like block arguments and
+// `load_borrow`, are not borrowing instructions. BeginBorrowValues
 // are typically checked during a use-def walk. Here, walking up from
 // `%forward` finds `%begin` as the introducer of its guaranteed
 // lifetime:
 //
-//   %begin = load_borrow %addr          // begin-borrow value
+//   %begin = load_borrow %addr          // BeginBorrowValue
 //   %forward = struct (%begin)          // forwards a guaranteed value
 //   ...
 //   end_borrow %begin                   // scope-ending use
