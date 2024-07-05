@@ -8646,6 +8646,7 @@ class MarkDependenceInst
       : InstructionBase(DebugLoc, value->getType(), forwardingOwnershipKind),
         Operands{this, value, base} {
     sharedUInt8().MarkDependenceInst.dependenceKind = uint8_t(dependenceKind);
+    assert(value != base && "mark_dependence operands must be distinct");
   }
 
 public:
