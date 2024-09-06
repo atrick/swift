@@ -564,3 +564,19 @@ extension AddressOwnershipLiveRange {
     return .local(allocation, range)
   }
 }
+
+let addressOwnershipLiveRangeTest = FunctionTest("address_ownership_live_range") {
+  function, arguments, context in
+  let address = arguments.takeValue()
+  print("Address: \(address)")
+  print("Base: \(address.accessBase)")
+  let begin = InstructionRange.beginningInstruction(for: address)
+  let localReachabilityCache = LocalVariableReachabilityCache()
+  guard var ownershipRange = AddressOwnershipLiveRange.compute(for: address, at: begin,
+                                                               localReachabilityCache, context) else {
+    print("Error: indeterminate live range")
+    return
+  }
+  defer { ownershipRange.deinitialize() }
+  print(ownershipRange)
+}

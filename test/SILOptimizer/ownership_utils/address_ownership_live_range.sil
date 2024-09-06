@@ -1,0 +1,71 @@
+// RUN: %target-sil-opt -test-runner %s -o /dev/null 2>&1 | %FileCheck %s
+
+sil_stage canonical
+
+import Builtin
+
+struct Box<T: ~Copyable>: ~Copyable {
+  let pointer: UnsafePointer<T>
+
+  subscript() -> T {
+    unsafeAddress {
+      pointer
+    }
+  }
+}
+
+struct NE: ~Escapable {}
+
+struct Inner: ~Copyable {
+  borrowing func ne() -> NE {
+    NE()
+  }
+}
+
+struct Outer: ~Copyable {
+  let innerBox: Box<Inner>
+
+  var ne3: NE {
+    _read {
+      yield innerBox[].ne()
+      //            ^ error: lifetime-dependent value escapes its scope
+    }
+  }
+}
+
+sil hidden [ossa] @test_unsafeAddress_simple : $@yield_once @convention(method) (@guaranteed Outer) -> _scope(0) @yields @guaranteed NE {
+// %0 "self"                                      // user: %1
+bb0(%0 : @guaranteed $Outer):
+  %1 = copy_value %0 : $Outer                     // user: %2
+  %2 = mark_unresolved_non_copyable_value [no_consume_or_assign] %1 : $Outer // users: %25, %21, %4, %3
+  debug_value %2 : $Outer, let, name "self", argno 1 // id: %3
+  %4 = begin_borrow %2 : $Outer                   // users: %18, %5
+  %5 = struct_extract %4 : $Outer, #Outer.innerBox // user: %7
+  // function_ref Box<>.subscript.unsafeAddressor
+  %6 = function_ref @$s14yieldsubscript3BoxVAARi_zrlExycilu : $@convention(method) <τ_0_0 where τ_0_0 : ~Copyable> (@guaranteed Box<τ_0_0>) -> UnsafePointer<τ_0_0> // user: %7
+  %7 = apply %6<Inner>(%5) : $@convention(method) <τ_0_0 where τ_0_0 : ~Copyable> (@guaranteed Box<τ_0_0>) -> UnsafePointer<τ_0_0> // user: %8
+  %8 = struct_extract %7 : $UnsafePointer<Inner>, #UnsafePointer._rawValue // user: %9
+  %9 = pointer_to_address %8 : $Builtin.RawPointer to [strict] $*Inner // user: %10
+  %10 = begin_access [read] [unsafe] %9 : $*Inner // users: %15, %17, %11
+  %11 = mark_unresolved_non_copyable_value [no_consume_or_assign] %10 : $*Inner // user: %12
+  %12 = load [copy] %11 : $*Inner                 // users: %16, %14
+  // function_ref Inner.ne()
+  %13 = function_ref @$s14yieldsubscript5InnerV2neAA2NEVYlsS_yF : $@convention(method) (@guaranteed Inner) -> _scope(0) @owned NE // user: %14
+  %14 = apply %13(%12) : $@convention(method) (@guaranteed Inner) -> _scope(0) @owned NE // user: %15
+  %15 = mark_dependence [unresolved] %14 : $NE on %10 : $*Inner // users: %19, %24, %20
+  destroy_value %12 : $Inner                      // id: %16
+  end_access %10 : $*Inner                        // id: %17
+  end_borrow %4 : $Outer                          // id: %18
+  yield %15 : $NE, resume bb1, unwind bb2         // id: %19
+
+bb1:                                              // Preds: bb0
+  destroy_value %15 : $NE                         // id: %20
+  destroy_value %2 : $Outer                       // id: %21
+  %22 = tuple ()                                  // user: %23
+  return %22 : $()                                // id: %23
+
+bb2:                                              // Preds: bb0
+  destroy_value %15 : $NE                         // id: %24
+  destroy_value %2 : $Outer                       // id: %25
+  unwind                                          // id: %26
+} // end sil function '$s14yieldsubscript5OuterV3ne3AA2NEVvr'
