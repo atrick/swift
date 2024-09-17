@@ -7262,36 +7262,32 @@ ManagedValue SILGenFunction::emitAddressorAccessor(
   emission.apply().getAll(results);
 
   assert(results.size() == 1);
+  auto result = results[0].getUnmanagedValue();
 
-  // Create a dependency on self: the pointer is only valid as long as self is
-  // alive.
-  auto pointer = [&]() -> SILValue {
-    auto result = results[0].getUnmanagedValue();
-    auto apply = cast<ApplyInst>(result);
-    if (!apply->hasSelfArgument()) {
-      // global addressors don't have a source value. Presumably, the addressor
-      // is the only way to get at them.
-      return result;
-    }
-    auto selfSILValue = apply->getSelfArgument();
-    return B.createMarkDependence(loc, result, selfSILValue,
-                                  MarkDependenceKind::Escaping);
-  }();
   // Drill down to the raw pointer using intrinsic knowledge of those types.
   auto pointerType =
-    pointer->getType().castTo<BoundGenericStructType>()->getDecl();
+    result->getType().castTo<BoundGenericStructType>()->getDecl();
   auto props = pointerType->getStoredProperties();
   assert(props.size() == 1);
   VarDecl *rawPointerField = props[0];
   auto rawPointer =
-    B.createStructExtract(loc, pointer, rawPointerField,
+    B.createStructExtract(loc, result, rawPointerField,
                           SILType::getRawPointerType(getASTContext()));
 
   // Convert to the appropriate address type and return.
   SILValue address = B.createPointerToAddress(loc, rawPointer, addressType,
                                               /*isStrict*/ true,
                                               /*isInvariant*/ false);
-
+  // Create a dependency on self: the pointer is only valid as long as self is
+  // alive.
+  auto apply = cast<ApplyInst>(result);
+  // global addressors don't have a source value. Presumably, the addressor
+  // is the only way to get at them.
+  if (apply->hasSelfArgument()) {
+    auto selfSILValue = apply->getSelfArgument();
+    address = B.createMarkDependence(loc, address, selfSILValue,
+                                     MarkDependenceKind::Unresolved);
+  }
   return ManagedValue::forLValue(address);
 }
 
