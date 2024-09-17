@@ -7262,19 +7262,33 @@ ManagedValue SILGenFunction::emitAddressorAccessor(
   emission.apply().getAll(results);
 
   assert(results.size() == 1);
-  auto pointer = results[0].getUnmanagedValue();
 
+  // Create a dependency on self: the pointer is only valid as long as self is
+  // alive.
+  auto pointer = [&]() -> SILValue {
+    auto result = results[0].getUnmanagedValue();
+    auto apply = cast<ApplyInst>(result);
+    if (!apply->hasSelfArgument()) {
+      // global addressors don't have a source value. Presumably, the addressor
+      // is the only way to get at them.
+      return result;
+    }
+    auto selfSILValue = apply->getSelfArgument();
+    return B.createMarkDependence(loc, result, selfSILValue,
+                                  MarkDependenceKind::Escaping);
+  }();
   // Drill down to the raw pointer using intrinsic knowledge of those types.
   auto pointerType =
     pointer->getType().castTo<BoundGenericStructType>()->getDecl();
   auto props = pointerType->getStoredProperties();
   assert(props.size() == 1);
   VarDecl *rawPointerField = props[0];
-  pointer = B.createStructExtract(loc, pointer, rawPointerField,
-                                  SILType::getRawPointerType(getASTContext()));
+  auto rawPointer =
+    B.createStructExtract(loc, pointer, rawPointerField,
+                          SILType::getRawPointerType(getASTContext()));
 
   // Convert to the appropriate address type and return.
-  SILValue address = B.createPointerToAddress(loc, pointer, addressType,
+  SILValue address = B.createPointerToAddress(loc, rawPointer, addressType,
                                               /*isStrict*/ true,
                                               /*isInvariant*/ false);
 

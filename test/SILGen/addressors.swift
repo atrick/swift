@@ -57,7 +57,8 @@ func test0() {
 
 // CHECK: [[T0:%.*]] = function_ref @$s10addressors1AVys5Int32VAEcilu :
 // CHECK: [[T1:%.*]] = apply [[T0]]({{%.*}}, [[AVAL]])
-// CHECK: [[T2:%.*]] = struct_extract [[T1]] : $UnsafePointer<Int32>, #UnsafePointer._rawValue
+// CHECK: [[MD:%.*]] = mark_dependence [[T1]] : $UnsafePointer<Int32> on [[AVAL]] : $A
+// CHECK: [[T2:%.*]] = struct_extract [[MD]] : $UnsafePointer<Int32>, #UnsafePointer._rawValue
 // CHECK: [[T3:%.*]] = pointer_to_address [[T2]] : $Builtin.RawPointer to [strict] $*Int32
 // CHECK: [[ACCESS:%.*]] = begin_access [read] [unsafe] [[T3]] : $*Int32
 // CHECK: [[Z:%.*]] = load [[ACCESS]] : $*Int32
@@ -66,7 +67,8 @@ func test0() {
 // CHECK: [[WRITE:%.*]] = begin_access [modify] [static] [[A]] : $*A
 // CHECK: [[T0:%.*]] = function_ref @$s10addressors1AVys5Int32VAEciau :
 // CHECK: [[T1:%.*]] = apply [[T0]]({{%.*}}, [[WRITE]])
-// CHECK: [[T2:%.*]] = struct_extract [[T1]] : $UnsafeMutablePointer<Int32>, #UnsafeMutablePointer._rawValue
+// CHECK: [[MD:%.*]] = mark_dependence [[T1]] : $UnsafeMutablePointer<Int32> on [[WRITE]] : $*A
+// CHECK: [[T2:%.*]] = struct_extract [[MD]] : $UnsafeMutablePointer<Int32>, #UnsafeMutablePointer._rawValue
 // CHECK: [[T3:%.*]] = pointer_to_address [[T2]] : $Builtin.RawPointer to [strict] $*Int32
 // CHECK: [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[T3]] : $*Int32
 // CHECK: load
@@ -77,7 +79,8 @@ func test0() {
 // CHECK: [[WRITE:%.*]] = begin_access [modify] [static] [[A]] : $*A
 // CHECK: [[T0:%.*]] = function_ref @$s10addressors1AVys5Int32VAEciau :
 // CHECK: [[T1:%.*]] = apply [[T0]]({{%.*}}, [[WRITE]])
-// CHECK: [[T2:%.*]] = struct_extract [[T1]] : $UnsafeMutablePointer<Int32>, #UnsafeMutablePointer._rawValue
+// CHECK: [[MD:%.*]] = mark_dependence [[T1]] : $UnsafeMutablePointer<Int32> on [[WRITE]] : $*A
+// CHECK: [[T2:%.*]] = struct_extract [[MD]] : $UnsafeMutablePointer<Int32>, #UnsafeMutablePointer._rawValue
 // CHECK: [[T3:%.*]] = pointer_to_address [[T2]] : $Builtin.RawPointer to [strict] $*Int32
 // CHECK: [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[T3]] : $*Int32
 // CHECK: store {{%.*}} to [[ACCESS]]
@@ -91,7 +94,8 @@ func test1() -> Int32 {
 // CHECK: [[A:%.*]] = apply [[CTOR]]([[T0]]) : $@convention(method) (@thin A.Type) -> A
 // CHECK: [[ACCESSOR:%.*]] = function_ref @$s10addressors1AVys5Int32VAEcilu : $@convention(method) (Int32, A) -> UnsafePointer<Int32>
 // CHECK: [[PTR:%.*]] = apply [[ACCESSOR]]({{%.*}}, [[A]]) : $@convention(method) (Int32, A) -> UnsafePointer<Int32>
-// CHECK: [[T0:%.*]] = struct_extract [[PTR]] : $UnsafePointer<Int32>, #UnsafePointer._rawValue
+// CHECK: [[MD:%.*]] = mark_dependence [[PTR]] : $UnsafePointer<Int32> on [[A]] : $A
+// CHECK: [[T0:%.*]] = struct_extract [[MD]] : $UnsafePointer<Int32>, #UnsafePointer._rawValue
 // CHECK: [[T1:%.*]] = pointer_to_address [[T0]] : $Builtin.RawPointer to [strict] $*Int32
 // CHECK: [[ACCESS:%.*]] = begin_access [read] [unsafe] [[T1]] : $*Int32
 // CHECK: [[T2:%.*]] = load [[ACCESS]] : $*Int32
@@ -145,7 +149,8 @@ struct B : Subscriptable {
 // CHECK:   [[WRITE:%.*]] = begin_access [modify] [static] [[B]] : $*B
 // CHECK:   [[T0:%.*]] = function_ref @$s10addressors1BVys5Int32VAEciau
 // CHECK:   [[PTR:%.*]] = apply [[T0]]([[INDEX]], [[WRITE]])
-// CHECK:   [[T0:%.*]] = struct_extract [[PTR]] : $UnsafeMutablePointer<Int32>,
+// CHECK:   [[MD:%.*]] = mark_dependence [[PTR]] : $UnsafeMutablePointer<Int32> on [[WRITE]] : $*B
+// CHECK:   [[T0:%.*]] = struct_extract [[MD]] : $UnsafeMutablePointer<Int32>,
 // CHECK:   [[ADDR:%.*]] = pointer_to_address [[T0]] : $Builtin.RawPointer to [strict] $*Int32
 // CHECK:   [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[ADDR]] : $*Int32
 // Accept either of struct_extract+load or load+struct_element_addr.
@@ -174,7 +179,8 @@ func test_carray(_ array: inout CArray<(Int32) -> Int32>) -> Int32 {
 // CHECK:   [[WRITE:%.*]] = begin_access [modify] [static] [[ARRAY]] : $*CArray<(Int32) -> Int32>
 // CHECK:   [[T0:%.*]] = function_ref @$s10addressors6CArrayVyxSiciau :
 // CHECK:   [[T1:%.*]] = apply [[T0]]<(Int32) -> Int32>({{%.*}}, [[WRITE]])
-// CHECK:   [[T2:%.*]] = struct_extract [[T1]] : $UnsafeMutablePointer<(Int32) -> Int32>, #UnsafeMutablePointer._rawValue
+// CHECK:   [[MD:%.*]] = mark_dependence [[T1]] : $UnsafeMutablePointer<(Int32) -> Int32> on [[WRITE]] : $*CArray<(Int32) -> Int32>
+// CHECK:   [[T2:%.*]] = struct_extract [[MD]] : $UnsafeMutablePointer<(Int32) -> Int32>, #UnsafeMutablePointer._rawValue
 // CHECK:   [[T3:%.*]] = pointer_to_address [[T2]] : $Builtin.RawPointer to [strict] $*@callee_guaranteed @substituted <τ_0_0, τ_0_1> (@in_guaranteed τ_0_0) -> @out τ_0_1 for <Int32, Int32>
 // CHECK:   [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[T3]]
 // CHECK:   store {{%.*}} to [[ACCESS]] :
@@ -184,7 +190,8 @@ func test_carray(_ array: inout CArray<(Int32) -> Int32>) -> Int32 {
 // CHECK:   [[T0:%.*]] = load [[READ]]
 // CHECK:   [[T1:%.*]] = function_ref @$s10addressors6CArrayVyxSicilu :
 // CHECK:   [[T2:%.*]] = apply [[T1]]<(Int32) -> Int32>({{%.*}}, [[T0]])
-// CHECK:   [[T3:%.*]] = struct_extract [[T2]] : $UnsafePointer<(Int32) -> Int32>, #UnsafePointer._rawValue
+// CHECK:   [[MD:%.*]] = mark_dependence [[T2]] : $UnsafePointer<(Int32) -> Int32> on [[T0]] : $CArray<(Int32) -> Int32>
+// CHECK:   [[T3:%.*]] = struct_extract [[MD]] : $UnsafePointer<(Int32) -> Int32>, #UnsafePointer._rawValue
 // CHECK:   [[T4:%.*]] = pointer_to_address [[T3]] : $Builtin.RawPointer to [strict] $*@callee_guaranteed @substituted <τ_0_0, τ_0_1> (@in_guaranteed τ_0_0) -> @out τ_0_1 for <Int32, Int32>
 // CHECK:   [[ACCESS:%.*]] = begin_access [read] [unsafe] [[T4]]
 // CHECK:   [[T5:%.*]] = load [[ACCESS]]
@@ -207,7 +214,8 @@ struct D : Subscriptable {
 // SILGEN:   [[ACCESS:%.*]] = begin_access [modify] [unknown] [[SELF]] : $*D
 // SILGEN:   [[T0:%.*]] = function_ref @$s10addressors1DVys5Int32VAEciau{{.*}}
 // SILGEN:   [[PTR:%.*]] = apply [[T0]]([[I]], [[ACCESS]])
-// SILGEN:   [[T0:%.*]] = struct_extract [[PTR]] : $UnsafeMutablePointer<Int32>,
+// SILGEN:   [[MD:%.*]] = mark_dependence [[PTR]] : $UnsafeMutablePointer<Int32> on %6 : $*D
+// SILGEN:   [[T0:%.*]] = struct_extract [[MD]] : $UnsafeMutablePointer<Int32>,
 // SILGEN:   [[ADDR:%.*]] = pointer_to_address [[T0]] : $Builtin.RawPointer to [strict] $*Int32
 // SILGEN:   [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[ADDR]] : $*Int32
 // SILGEN:   assign [[VALUE]] to [[ACCESS]] : $*Int32
@@ -217,7 +225,8 @@ struct D : Subscriptable {
 // SILGEN:   [[SELF_ACCESS:%.*]] = begin_access [modify] [unknown] [[SELF]]
 // SILGEN:   [[T0:%.*]] = function_ref @$s10addressors1DVys5Int32VAEciau
 // SILGEN:   [[PTR:%.*]] = apply [[T0]]([[I]], [[SELF_ACCESS]])
-// SILGEN:   [[ADDR_TMP:%.*]] = struct_extract [[PTR]] : $UnsafeMutablePointer<Int32>,
+// SILGEN:   [[MD:%.*]] = mark_dependence [[PTR]] : $UnsafeMutablePointer<Int32> on [[SELF_ACCESS]] : $*D
+// SILGEN:   [[ADDR_TMP:%.*]] = struct_extract [[MD]] : $UnsafeMutablePointer<Int32>,
 // SILGEN:   [[ADDR:%.*]] = pointer_to_address [[ADDR_TMP]]
 // SILGEN:   [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[ADDR]]
 // SILGEN:   yield [[ACCESS]]
@@ -234,7 +243,8 @@ func test_d(_ array: inout D) -> Int32 {
 // CHECK:   [[WRITE:%.*]] = begin_access [modify] [static] [[ARRAY]] : $*D
 // CHECK:   [[T0:%.*]] = function_ref @$s10addressors1DVys5Int32VAEciau
 // CHECK:   [[T1:%.*]] = apply [[T0]]({{%.*}}, [[WRITE]])
-// CHECK:   [[T2:%.*]] = struct_extract [[T1]] : $UnsafeMutablePointer<Int32>,
+// CHECK:   [[MD:%.*]] = mark_dependence [[T1]] : $UnsafeMutablePointer<Int32> on [[WRITE]] : $*D
+// CHECK:   [[T2:%.*]] = struct_extract [[MD]] : $UnsafeMutablePointer<Int32>,
 // CHECK:   [[ADDR:%.*]] = pointer_to_address [[T2]] : $Builtin.RawPointer to [strict] $*Int32
 // CHECK:   [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[ADDR]] : $*Int32
 // CHECK:   store [[V]] to [[ACCESS]] : $*Int32
@@ -243,7 +253,8 @@ func test_d(_ array: inout D) -> Int32 {
 // CHECK:   [[WRITE:%.*]] = begin_access [modify] [static] [[ARRAY]] : $*D
 // CHECK:   [[T0:%.*]] = function_ref @$s10addressors1DVys5Int32VAEciau
 // CHECK:   [[T1:%.*]] = apply [[T0]]({{%.*}}, [[WRITE]])
-// CHECK:   [[T2:%.*]] = struct_extract [[T1]] : $UnsafeMutablePointer<Int32>,
+// CHECK:   [[MD:%.*]] = mark_dependence [[T1]] : $UnsafeMutablePointer<Int32> on [[WRITE]] : $*D
+// CHECK:   [[T2:%.*]] = struct_extract [[MD]] : $UnsafeMutablePointer<Int32>,
 // CHECK:   [[ADDR:%.*]] = pointer_to_address [[T2]] : $Builtin.RawPointer to [strict] $*Int32
 // CHECK:   [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[ADDR]] : $*Int32
 // CHECK:   [[FN:%.*]] = function_ref @$s10addressors14take_int_inoutyys5Int32VzF
@@ -269,7 +280,8 @@ struct E {
 // CHECK: bb0([[E:%.*]] : $E):
 // CHECK:   [[T0:%.*]] = function_ref @$s10addressors1EV5values5Int32Vvau
 // CHECK:   [[T1:%.*]] = apply [[T0]]([[E]])
-// CHECK:   [[T2:%.*]] = struct_extract [[T1]]
+// CHECK:   [[MD:%.*]] = mark_dependence [[T1]] : $UnsafeMutablePointer<Int32> on %0 : $E
+// CHECK:   [[T2:%.*]] = struct_extract [[MD]]
 // CHECK:   [[T3:%.*]] = pointer_to_address [[T2]]
 // CHECK:   [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[T3]] : $*Int32
 // CHECK:   store {{%.*}} to [[ACCESS]] : $*Int32

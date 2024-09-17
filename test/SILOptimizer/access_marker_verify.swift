@@ -1019,7 +1019,8 @@ func testPointerInit(x: Int, y: UnsafeMutablePointer<Int>) {
 // CHECK: bb0(%0 : $Int, %1 : $UnsafeMutablePointer<Int>):
 // call addressor
 // CHECK: [[POINTEE:%.*]] = apply %{{.*}}<Int>(%1) : $@convention(method) <τ_0_0 where τ_0_0 : ~Copyable> (UnsafeMutablePointer<τ_0_0>) -> UnsafeMutablePointer<τ_0_0>
-// CHECK: [[RAWPTR:%.*]] = struct_extract [[POINTEE]] : $UnsafeMutablePointer<Int>, #UnsafeMutablePointer._rawValue
+// CHECK: [[MD:%.*]] = mark_dependence [[POINTEE]] : $UnsafeMutablePointer<Int> on %1 : $UnsafeMutablePointer<Int>
+// CHECK: [[RAWPTR:%.*]] = struct_extract [[MD]] : $UnsafeMutablePointer<Int>, #UnsafeMutablePointer._rawValue
 // CHECK: [[ADR:%.*]] = pointer_to_address [[RAWPTR]] : $Builtin.RawPointer to [strict] $*Int
 // CHECK: [[ACCESS:%.*]] = begin_access [modify] [unsafe] [[ADR]] : $*Int
 // CHECK: assign %0 to [[ACCESS]] : $*Int
