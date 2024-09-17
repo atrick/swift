@@ -14,7 +14,8 @@ public struct FA<T> {
                   // function_ref UnsafeMutablePointer.subscript.unsafeAddressor
 // CHECK:         [[ADDRESSOR:%[^,]+]] = function_ref @$sSpsRi_zrlEyxSicilu
 // CHECK:         [[POINTER:%[^,]+]] = apply [[ADDRESSOR]]
-// CHECK:         [[RAW_POINTER:%[^,]+]] = struct_extract [[POINTER]]
+// CHECK:         [[MD:%.*]] = mark_dependence [[POINTER]] : $UnsafePointer<T>
+// CHECK:         [[RAW_POINTER:%[^,]+]] = struct_extract [[MD]]
 // CHECK:         [[ADDR:%[^,]+]] = pointer_to_address [[RAW_POINTER]]
 // CHECK:         [[ACCESS:%[^,]+]] = begin_access [read] [unsafe] [[ADDR]]
 // Verify that no spurious temporary is emitted.
