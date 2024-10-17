@@ -604,15 +604,14 @@ SILValue VariableNameInferrer::findDebugInfoProvidingValueHelper(
             dyn_cast<PointerToAddressInst>(stripAccessMarkers(searchValue))) {
       // The addressor can either produce the raw pointer itself or an
       // `UnsafePointer` stdlib type wrapping it.
-      ApplyInst *addressorInvocation;
-      if (auto structExtract =
-              dyn_cast<StructExtractInst>(ptrToAddr->getOperand())) {
-        addressorInvocation = dyn_cast<ApplyInst>(structExtract->getOperand());
-      } else {
-        addressorInvocation = dyn_cast<ApplyInst>(ptrToAddr->getOperand());
+      SILValue address = ptrToAddr->getOperand();
+      if (auto *structExtract = dyn_cast<StructExtractInst>(address)) {
+        address = structExtract->getOperand();
       }
-
-      if (addressorInvocation) {
+      if (auto *md = dyn_cast<MarkDependenceInst>(address)) {
+        address = md->getValue();
+      }
+      if (ApplyInst *addressorInvocation = dyn_cast<ApplyInst>(address)) {
         if (auto selfParam =
                 getNamePathComponentFromCallee(addressorInvocation)) {
           searchValue = selfParam;
