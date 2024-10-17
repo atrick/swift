@@ -225,9 +225,9 @@ bool MoveOnlyObjectCheckerPImpl::checkForSameInstMultipleUseErrors(
     case OperandOwnership::ForwardingUnowned:
     case OperandOwnership::PointerEscape:
     case OperandOwnership::BitwiseEscape:
-      LLVM_DEBUG(llvm::dbgs()
-                 << "        Found forwarding unowned or escape!\n");
-      return false;
+      // None of the "unowned" uses can consume the original value. Simply
+      // ignore them.
+      continue;
 
     case OperandOwnership::TrivialUse:
     case OperandOwnership::InstantaneousUse:
