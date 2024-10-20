@@ -2,21 +2,27 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2023 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2024 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See https://swift.org/LICENSE.txt for license information
 // See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
 //
 //===---------------------------------------------------------------------===//
-
-// For an apply that returns a lifetime dependent value, 
-// LifetimeDependenceInsertion inserts mark_dependence [unresolved] on parent
-// value's access scope. LifetimeDependenceScopeFixup then extends the access
-// scope to cover all uses of the dependent value.
-
-// This pass must run after LifetimeDependenceInsertion and before
-// LifetimeDependenceDiagnostics.
+///
+/// Pass dependencies:
+///
+/// LifetimeDependenceScopeFixup must run
+/// - after LifetimeDependenceInsertion
+/// - before LifetimeDependenceDiagnostics
+///
+/// For an apply that returns a lifetime dependent value, LifetimeDependenceInsertion inserts mark_dependence
+/// [unresolved] on parent value's access scope. LifetimeDependenceScopeFixup then extends the access scope to cover all
+/// uses of the dependent value. Otherwise, LifetimeDependenceDiagnostics will report a violation.
+///
+/// This is conceptually a SILGen cleanup pass, because lifetime dependencies are invalid prior.
+///
+//===---------------------------------------------------------------------===//
 
 import SIL
 
@@ -28,6 +34,44 @@ private func log(prefix: Bool = true, _ message: @autoclosure () -> String) {
   }
 }
 
+/// 1. If the dependence is on a borrow scope:
+///
+///     %outerAccess = begin_access %base
+///     %innerAccess = begin_access %outerAccess
+///     %innerBorrow = load_borrow %innerAccess
+///     %dependentVal = mark_dependence [unresolved] %v on %innerBorrow
+///
+/// Then rewrite the mark_dependence base operand:
+///
+///     %dependentVal = mark_dependence [unresolved] %v on %innerAccess
+///
+/// 2. If dependent uses exceed the original access scope:
+///
+///     %dependentVal = mark_dependence [unresolved] %v on %innerAccess
+///     end_access %innerAccess
+///     apply %f(%dependentVal)
+///
+/// Then sink the end_access:
+///
+///     %dependentVal = mark_dependence [unresolved] %v on %innerAccess
+///     end_access %innerAccess
+///     apply %f(%dependentVal)
+///
+/// 3. If a dependent uses is on a function return:
+///
+///     sil @f $(@inout) -> () {
+///     bb0(%0: $*T)
+///       %outerAccess = begin_access [modify] %0
+///       %innerAccess = begin_access %outerAccess
+///       %dependentVal = mark_dependence [unresolved] %v on %innerAccess
+///       end_access %innerAccess
+///       end_access %outerAccess
+///       return %dependentVal
+///
+/// Then rewrite the mark_dependence base operand to a function argument:
+///
+///       %dependentVal = mark_dependence [unresolved] %v on %0
+///
 let lifetimeDependenceScopeFixupPass = FunctionPass(
   name: "lifetime-dependence-scope-fixup")
 { (function: Function, context: FunctionPassContext) in
@@ -44,27 +88,48 @@ let lifetimeDependenceScopeFixupPass = FunctionPass(
     guard let markDep = instruction as? MarkDependenceInst else {
       continue
     }
-    guard let lifetimeDep = LifetimeDependence(markDep, context) else {
+    guard let innerLifetimeDep = LifetimeDependence(markDep, context) else {
       continue
     }
-    if let arg = extendAccessScopes(dependence: lifetimeDep, localReachabilityCache, context) {
+    // 1. redirect the dependence base to be on the innermost access:
+    //    mark_dependence [unresolved] %v on %borrow => %innerAccess
+    guard let newLifetimeDep = rewriteMarkDepBase(markDependence: markDep, scope: innerLifetimeDep.scope, context)
+    else {
+      continue
+    }
+    // 2. sink the end_access
+    if let arg = extendAccessScopes(dependence: newLifetimeDep, localReachabilityCache, context) {
+      // 3. redirect the dependence base to the function argument.
       markDep.baseOperand.set(to: arg, context)
     }
   }
 }
 
-/// Extend all access scopes that enclose `dependence`. If dependence is on an access scope in the caller, then return
-/// the function argument that represents the dependence scope.
+/// Rewrite the mark_dependence base operand to ignore inner borrow scopes (begin_borrow, load_borrow).
+///
+/// Note: this could be done as a general simplification, e.g. after inlining. But currently this is only relevant for
+/// diagnostics.
+private func rewriteMarkDepBase(markDependence: MarkDependenceInst, scope: LifetimeDependence.Scope,
+                                _ context: some MutatingContext) -> LifetimeDependence? {
+  guard let newScope = scope.ignoreBorrowScope(context) else {
+    return nil
+  }
+  let newBase = newScope.parentValue
+  if newBase != markDependence.baseOperand.value {
+    markDependence.baseOperand.set(to: newBase, context)
+  }
+  return LifetimeDependence(scope: newScope, dependentValue: markDependence)
+}
+
+/// Extend all access scopes that enclose `dependence`.
 private func extendAccessScopes(dependence: LifetimeDependence,
                                 _ localReachabilityCache: LocalVariableReachabilityCache,
                                 _ context: FunctionPassContext) -> FunctionArgument? {
   log("Scope fixup for lifetime dependent instructions: \(dependence)")
 
-  guard case .access(let beginAccess) = dependence.scope else {
+  guard case let .access(beginAccess) = dependence.scope else {
     return nil
   }
-  let function = beginAccess.parentFunction
-
   // Get the range accessBase lifetime. The accessRange cannot exceed this without producing invalid SIL.
   guard var ownershipRange = AddressOwnershipLiveRange.compute(for: beginAccess.address, at: beginAccess,
                                                                localReachabilityCache, context) else {
@@ -75,6 +140,7 @@ private func extendAccessScopes(dependence: LifetimeDependence,
   var accessRange = InstructionRange(begin: beginAccess, context)
   defer {accessRange.deinitialize()}
 
+  let function = beginAccess.parentFunction
   var walker = LifetimeDependenceScopeFixupWalker(function, localReachabilityCache, context) {
     // Do not extend the accessRange past the ownershipRange.
     let dependentInst = $0.instruction
