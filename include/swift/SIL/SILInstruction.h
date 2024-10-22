@@ -8772,6 +8772,11 @@ public:
       uint8_t(MarkDependenceKind::NonEscaping);
   }
 
+  void settleToEscaping() {
+    sharedUInt8().MarkDependenceInst.dependenceKind =
+      uint8_t(MarkDependenceKind::Escaping);
+  }
+
   /// Visit the instructions that end the lifetime of an OSSA on-stack closure.
   bool visitNonEscapingLifetimeEnds(
     llvm::function_ref<bool (Operand*)> visitScopeEnd,
