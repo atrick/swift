@@ -673,8 +673,15 @@ OperandOwnershipClassifier::visitMarkDependenceInst(MarkDependenceInst *mdi) {
       /*allowUnowned*/true);
   }
   if (mdi->isNonEscaping()) {
-    // This creates a "dependent value", just like on-stack partial_apply, which
-    // we treat like a borrow.
+    // This creates a "dependent value", which we treat like a borrow (just like
+    // on-stack partial_apply). If the result is non-address value, then the
+    // borrow scope is determined by following the ownership-forwarded uses. If
+    // the result is an address, then the borrow scope is determined by
+    // following the address uses. If the result is non-escapable, then the
+    // borrow scope includes copies and loads in addition to forwards. The
+    // [nonescaping] flag means that it is possible to discover all transitive
+    // uses, but the client can choose to conservatively ignore those uses and
+    // treat this as an escape.
     return OperandOwnership::Borrow;
   }
   if (mdi->hasUnresolvedEscape()) {
@@ -682,9 +689,6 @@ OperandOwnershipClassifier::visitMarkDependenceInst(MarkDependenceInst *mdi) {
     // lifetime.
     return OperandOwnership::UnownedInstantaneousUse;
   }
-  // FIXME: Add an end_dependence instruction so we can treat mark_dependence as
-  // a borrow of the base (mark_dependence %base -> end_dependence is analogous
-  // to a borrow scope).
   return OperandOwnership::PointerEscape;
 }
 
