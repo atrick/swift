@@ -535,6 +535,8 @@ extension LifetimeDependenceDefUseWalker {
         // local variable, then consider all other reachable uses of that local variable to be dependent uses. Remember
         // the operand to the mark_dependence as if it was a store. Diagnostics will consider this the point of variable
         // initialization.
+        //
+        // TODO: only do this for mark_dependence_addr
         if visitStoredUses(of: md.valueOperand, into: md.value) == .abortWalk {
           return .abortWalk
         }

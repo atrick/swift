@@ -447,9 +447,12 @@ private func computeDependentUseRange(of value: Value, within scopeExtension: in
 
   // Lifetime dependenent uses may not be dominated by the access. The dependent value may be used by a phi or stored
   // into a memory location. The access may be conditional relative to such uses. If any use was not dominated, then
-  // `useRange` will include the function entry.
+  // `useRange` will include the function entry. There is not way to directly check
+  // useRange.isValid. useRange.blockRange.isValid is not a strong enough check because it will always succeed when
+  // useRange.begin == entryBlock even if a use if above useRange.begin.
   let firstInst = function.entryBlock.instructions.first!
   if firstInst != useRange.begin, useRange.contains(firstInst) {
+    useRange.deinitialize()
     return nil
   }
   return useRange
