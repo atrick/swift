@@ -292,14 +292,15 @@ TransitiveAddressWalker<Impl>::walk(SILValue projectedAddress) && {
       continue;
     }
 
-    if (auto *mdi = dyn_cast<MarkDependenceInst>(user)) {
+    if (auto mdi = MarkDependenceInstruction(user)) {
       // If this is the base, just treat it as a liveness use.
-      if (op->get() == mdi->getBase()) {
+      if (op->get() == mdi.getBase()) {
         callVisitUse(op);
         continue;
       }
-
-      // If we are the value use, look through it.
+    }
+    if (auto *mdi = dyn_cast<MarkDependenceInst>(user)) {
+      // If we are the value use of a forwarding markdep, look through it.
       transitiveResultUses(op);
       continue;
     }

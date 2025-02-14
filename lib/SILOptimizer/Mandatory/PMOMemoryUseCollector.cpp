@@ -223,10 +223,10 @@ bool ElementUseCollector::collectContainerUses(SILValue boxValue) {
         return false;
       continue;
     }
-    if (auto *md = dyn_cast<MarkDependenceInst>(user)) {
+    if (auto mdi = MarkDependenceInstruction(user)) {
       // Another value depends on the current in-memory value. Consider that a
       // load.
-      if (md->getBase() == ui->get()) {
+      if (mdi.getBase() == ui->get()) {
         Uses.emplace_back(user, PMOUseKind::DependenceBase);
         continue;
       }
@@ -471,20 +471,21 @@ bool ElementUseCollector::collectUses(SILValue Pointer) {
     if (User->isDebugInstruction())
       continue;
 
-    if (auto *md = dyn_cast<MarkDependenceInst>(User)) {
-      if (md->getBase() == UI->get()) {
+    if (auto mdi = MarkDependenceInstruction(User)) {
+      if (mdi.getBase() == UI->get()) {
         Uses.emplace_back(User, PMOUseKind::DependenceBase);
         continue;
       }
-      SILValue value = md->getValue();
-      assert(value == UI->get() && "missing mark_dependence use");
+      assert(mdi.getDependent() == UI->get() && "missing mark_dependence use");
       // A mark_dependence creates a new dependent value in the same memory
       // location. Analogous to a load + init.
       Uses.emplace_back(User, PMOUseKind::Load);
       Uses.emplace_back(User, PMOUseKind::Initialization);
-      if (!collectUses(md))
-        return false;
-
+      // Follow a forwarding mark_dependence.
+      if (auto *mdValue = dyn_cast<MarkDependenceInst>(User)) {
+        if (!collectUses(mdValue))
+          return false;
+      }
       continue;
     }
 

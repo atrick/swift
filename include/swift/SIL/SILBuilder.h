@@ -2345,6 +2345,14 @@ public:
                     forwardingOwnershipKind, dependenceKind));
   }
 
+  MarkDependenceAddrInst *
+  createMarkDependenceAddr(SILLocation Loc, SILValue address, SILValue base,
+                           MarkDependenceKind dependenceKind) {
+    return insert(new (getModule()) MarkDependenceAddrInst(
+                    getSILDebugLocation(Loc), address, base,
+                    dependenceKind));
+  }
+
   IsUniqueInst *createIsUnique(SILLocation Loc, SILValue operand) {
     auto Int1Ty = SILType::getBuiltinIntegerType(1, getASTContext());
     return insert(new (getModule()) IsUniqueInst(getSILDebugLocation(Loc),

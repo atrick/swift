@@ -182,6 +182,7 @@ OPERAND_OWNERSHIP(TrivialUse, IsUnique)
 OPERAND_OWNERSHIP(TrivialUse, Load)
 OPERAND_OWNERSHIP(TrivialUse, LoadBorrow)
 OPERAND_OWNERSHIP(TrivialUse, MarkFunctionEscape)
+OPERAND_OWNERSHIP(TrivialUse, MarkDependenceAddr)
 OPERAND_OWNERSHIP(TrivialUse, ObjCExistentialMetatypeToObject)
 OPERAND_OWNERSHIP(TrivialUse, ObjCMetatypeToObject)
 OPERAND_OWNERSHIP(TrivialUse, ObjCToThickMetatype)
@@ -667,7 +668,7 @@ OperandOwnership OperandOwnershipClassifier::visitCopyBlockWithoutEscapingInst(
 OperandOwnership
 OperandOwnershipClassifier::visitMarkDependenceInst(MarkDependenceInst *mdi) {
   // If we are analyzing "the value", we forward ownership.
-  if (getOperandIndex() == MarkDependenceInst::Value) {
+  if (getOperandIndex() == MarkDependenceInst::Dependent) {
     return getOwnershipKind().getForwardingOperandOwnership(
       /*allowUnowned*/true);
   }

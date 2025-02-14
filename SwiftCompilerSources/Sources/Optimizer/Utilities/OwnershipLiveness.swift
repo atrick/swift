@@ -713,9 +713,13 @@ extension InteriorUseWalker: AddressUseVisitor {
     return .continueWalk
   }
 
-  mutating func dependentAddressUse(of operand: Operand, into value: Value)
-    -> WalkResult {
+  mutating func dependentAddressUse(of operand: Operand, dependentValue value: Value) -> WalkResult {
     walkDownUses(of: value)
+  }    
+
+  mutating func dependentAddressUse(of operand: Operand, dependentAddress address: Value) -> WalkResult {
+    // TODO: consider data flow that finds reachable uses of `dependentAddress`.
+    return escapingAddressUse(of: operand)
   }    
 
   mutating func escapingAddressUse(of operand: Operand) -> WalkResult {

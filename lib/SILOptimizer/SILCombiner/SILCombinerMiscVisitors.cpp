@@ -1917,7 +1917,11 @@ static bool isLiteral(SILValue val) {
   return isa<LiteralInst>(val);
 }
 
-SILInstruction *SILCombiner::visitMarkDependenceInst(MarkDependenceInst *mdi) {
+template<typename Derived>
+static SILInstruction *combineMarkDependenceBaseInst(
+  MarkDependenceInstBase<Derived> *mdi,
+  SILCombiner *C) {
+  
   if (!mdi->getFunction()->hasOwnership()) {
     // Simplify the base operand of a MarkDependenceInst to eliminate
     // unnecessary instructions that aren't adding value.
@@ -1928,7 +1932,7 @@ SILInstruction *SILCombiner::visitMarkDependenceInst(MarkDependenceInst *mdi) {
       if (eiBase->hasOperand()) {
         mdi->setBase(eiBase->getOperand());
         if (eiBase->use_empty()) {
-          eraseInstFromFunction(*eiBase);
+          C->eraseInstFromFunction(*eiBase);
         }
         return mdi;
       }
@@ -1939,7 +1943,7 @@ SILInstruction *SILCombiner::visitMarkDependenceInst(MarkDependenceInst *mdi) {
     if (auto *ier = dyn_cast<InitExistentialRefInst>(mdi->getBase())) {
       mdi->setBase(ier->getOperand());
       if (ier->use_empty())
-        eraseInstFromFunction(*ier);
+        C->eraseInstFromFunction(*ier);
       return mdi;
     }
 
@@ -1948,7 +1952,7 @@ SILInstruction *SILCombiner::visitMarkDependenceInst(MarkDependenceInst *mdi) {
     if (auto *oeri = dyn_cast<OpenExistentialRefInst>(mdi->getBase())) {
       mdi->setBase(oeri->getOperand());
       if (oeri->use_empty())
-        eraseInstFromFunction(*oeri);
+        C->eraseInstFromFunction(*oeri);
       return mdi;
     }
   }
@@ -1959,12 +1963,20 @@ SILInstruction *SILCombiner::visitMarkDependenceInst(MarkDependenceInst *mdi) {
   {
     SILType baseType = mdi->getBase()->getType();
     if (baseType.getObjectType().isTrivial(*mdi->getFunction())) {
-      SILValue value = mdi->getValue();
-      mdi->replaceAllUsesWith(value);
-      return eraseInstFromFunction(*mdi);
+      if (auto mdValue = dyn_cast<MarkDependenceInst>(mdi)) {
+        auto &valOper = mdi->getAllOperands()[MarkDependenceInst::Dependent];
+        mdValue->replaceAllUsesWith(valOper.get());
+      }
+      return C->eraseInstFromFunction(*mdi);
     }
   }
+  return nullptr;
+}
 
+SILInstruction *SILCombiner::visitMarkDependenceInst(MarkDependenceInst *mdi) {
+  if (auto *result = combineMarkDependenceBaseInst(mdi, this)) {
+    return result;
+  }
   if (isLiteral(mdi->getValue())) {
     // A literal lives forever, so no mark_dependence is needed.
     // This pattern can occur after StringOptimization when a utf8CString of
@@ -1972,8 +1984,12 @@ SILInstruction *SILCombiner::visitMarkDependenceInst(MarkDependenceInst *mdi) {
     replaceInstUsesWith(*mdi, mdi->getValue());
     return eraseInstFromFunction(*mdi);
   }
-
   return nullptr;
+}
+
+SILInstruction *
+SILCombiner::visitMarkDependenceAddrInst(MarkDependenceAddrInst *mdi) {
+  return combineMarkDependenceBaseInst(mdi, this);
 }
 
 /// Returns true if reference counting and debug_value users of a global_value

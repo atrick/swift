@@ -527,6 +527,12 @@ extension AddressDefUseWalker {
       } else {
         return unmatchedPath(address: operand, path: path)
       }
+    case let mdi as MarkDependenceAddrInst:
+      if operand.index == 0 {
+        return leafUse(address: operand, path: path)
+      } else {
+        return unmatchedPath(address: operand, path: path)
+      }
     default:
       return leafUse(address: operand, path: path)
     }

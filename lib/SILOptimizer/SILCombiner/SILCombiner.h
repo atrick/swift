@@ -293,6 +293,7 @@ public:
   SILInstruction *visitAllocRefDynamicInst(AllocRefDynamicInst *ARDI);
       
   SILInstruction *visitMarkDependenceInst(MarkDependenceInst *MDI);
+  SILInstruction *visitMarkDependenceAddrInst(MarkDependenceAddrInst *MDI);
   SILInstruction *visitConvertFunctionInst(ConvertFunctionInst *CFI);
   SILInstruction *
   visitConvertEscapeToNoEscapeInst(ConvertEscapeToNoEscapeInst *Cvt);

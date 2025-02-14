@@ -2699,7 +2699,8 @@ public:
   void visitClassifyBridgeObjectInst(ClassifyBridgeObjectInst *CBOI) {
     *this << getIDAndType(CBOI->getOperand());
   }
-  void visitMarkDependenceInst(MarkDependenceInst *MDI) {
+  template <typename T>
+  void visitMarkDependenceInstBase(MarkDependenceInstBase<T> *MDI) {
     switch (MDI->dependenceKind()) {
     case MarkDependenceKind::Unresolved:
       *this << "[unresolved] ";
@@ -2710,9 +2711,16 @@ public:
       *this << "[nonescaping] ";
       break;
     }
-    *this << getIDAndType(MDI->getValue()) << " on "
-          << getIDAndType(MDI->getBase());
+    *this <<
+      getIDAndType(MDI->getOperand(MarkDependenceInstBase<T>::Dependent))
+          << " on " << getIDAndType(MDI->getBase());
+  }
+  void visitMarkDependenceInst(MarkDependenceInst *MDI) {
+    visitMarkDependenceInstBase(MDI);
     printForwardingOwnershipKind(MDI, MDI->getValue());
+  }
+  void visitMarkDependenceAddrInst(MarkDependenceAddrInst *MDI) {
+    visitMarkDependenceInstBase(MDI);
   }
   void visitCopyBlockInst(CopyBlockInst *RI) {
     *this << getIDAndType(RI->getOperand());

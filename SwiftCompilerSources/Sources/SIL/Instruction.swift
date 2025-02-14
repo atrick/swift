@@ -1063,20 +1063,22 @@ class GetAsyncContinuationAddrInst : SingleValueInstruction, UnaryInstruction {}
 
 final public class ExtractExecutorInst : SingleValueInstruction {}
 
-final public
-class MarkDependenceInst : SingleValueInstruction {
-  public enum DependenceKind: Int32 {
-    case Unresolved = 0
-    case Escaping = 1
-    case NonEscaping = 2
+public enum MarkDependenceKind: Int32 {
+  case Unresolved = 0
+  case Escaping = 1
+  case NonEscaping = 2
+}
+
+public protocol MarkDependenceInstruction: Instruction {
+  var baseOperand: Operand { get }
+  var base: Value { get }
+}
+
+extension MarkDependenceInstruction {
+  public var dependenceKind: MarkDependenceKind {
+    MarkDependenceKind(rawValue: bridged.MarkDependenceInst_dependenceKind().rawValue)!
   }
-  public var valueOperand: Operand { operands[0] }
-  public var baseOperand: Operand { operands[1] }
-  public var value: Value { return valueOperand.value }
-  public var base: Value { return baseOperand.value }
-  public var dependenceKind: DependenceKind {
-    DependenceKind(rawValue: bridged.MarkDependenceInst_dependenceKind().rawValue)!
-  }
+
   public var isNonEscaping: Bool { dependenceKind == .NonEscaping }
   public var isUnresolved: Bool { dependenceKind == .Unresolved }
 
@@ -1091,6 +1093,22 @@ class MarkDependenceInst : SingleValueInstruction {
   public var hasScopedLifetime: Bool {
     return isNonEscaping && type.isObject && ownership == .owned && type.isEscapable(in: parentFunction)
   }
+}
+
+final public
+class MarkDependenceInst : SingleValueInstruction, MarkDependenceInstruction {
+  public var valueOperand: Operand { operands[0] }
+  public var baseOperand: Operand { operands[1] }
+  public var value: Value { return valueOperand.value }
+  public var base: Value { return baseOperand.value }
+}
+
+final public
+class MarkDependenceAddrInst : Instruction, MarkDependenceInstruction {
+  public var addressOperand: Operand { operands[0] }
+  public var baseOperand: Operand { operands[1] }
+  public var address: Value { return addressOperand.value }
+  public var base: Value { return baseOperand.value }
 }
 
 final public class RefToBridgeObjectInst : SingleValueInstruction {

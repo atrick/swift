@@ -870,6 +870,10 @@ namespace {
        return true;
     }
 
+    bool visitMarkDependenceAddrInst(const MarkDependenceAddrInst *RHS) {
+       return true;
+    }
+
     bool visitOpenExistentialRefInst(const OpenExistentialRefInst *RHS) {
       return true;
     }
@@ -1092,8 +1096,8 @@ MemoryBehavior SILInstruction::getMemoryBehavior() const {
     llvm_unreachable("Covered switch isn't covered?!");
   }
   
-  if (auto *mdi = dyn_cast<MarkDependenceInst>(this)) {
-    if (mdi->getBase()->getType().isAddress())
+  if (auto mdi = MarkDependenceInstruction(this)) {
+    if (mdi.getBase()->getType().isAddress())
       return MemoryBehavior::MayRead;
     return MemoryBehavior::None;
   }
@@ -1452,6 +1456,9 @@ bool SILInstruction::isTriviallyDuplicatable() const {
   // borrow scope. We currently assume that a set of dominated scope-ending uses
   // can be found.
   if (auto *MD = dyn_cast<MarkDependenceInst>(this)) {
+    return !MD->isNonEscaping();
+  }
+  if (auto *MD = dyn_cast<MarkDependenceAddrInst>(this)) {
     return !MD->isNonEscaping();
   }
 
