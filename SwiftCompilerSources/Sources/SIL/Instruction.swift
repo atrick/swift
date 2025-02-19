@@ -1072,15 +1072,25 @@ public enum MarkDependenceKind: Int32 {
 public protocol MarkDependenceInstruction: Instruction {
   var baseOperand: Operand { get }
   var base: Value { get }
+  var dependenceKind: MarkDependenceKind { get }
+  func resolveToNonEscaping()
+  func settleToEscaping()
 }
 
 extension MarkDependenceInstruction {
+  public var isNonEscaping: Bool { dependenceKind == .NonEscaping }
+  public var isUnresolved: Bool { dependenceKind == .Unresolved }
+}
+
+final public class MarkDependenceInst : SingleValueInstruction, MarkDependenceInstruction {
+  public var valueOperand: Operand { operands[0] }
+  public var baseOperand: Operand { operands[1] }
+  public var value: Value { return valueOperand.value }
+  public var base: Value { return baseOperand.value }
+
   public var dependenceKind: MarkDependenceKind {
     MarkDependenceKind(rawValue: bridged.MarkDependenceInst_dependenceKind().rawValue)!
   }
-
-  public var isNonEscaping: Bool { dependenceKind == .NonEscaping }
-  public var isUnresolved: Bool { dependenceKind == .Unresolved }
 
   public func resolveToNonEscaping() {
     bridged.MarkDependenceInst_resolveToNonEscaping()
@@ -1095,20 +1105,23 @@ extension MarkDependenceInstruction {
   }
 }
 
-final public
-class MarkDependenceInst : SingleValueInstruction, MarkDependenceInstruction {
-  public var valueOperand: Operand { operands[0] }
-  public var baseOperand: Operand { operands[1] }
-  public var value: Value { return valueOperand.value }
-  public var base: Value { return baseOperand.value }
-}
-
-final public
-class MarkDependenceAddrInst : Instruction, MarkDependenceInstruction {
+final public class MarkDependenceAddrInst : Instruction, MarkDependenceInstruction {
   public var addressOperand: Operand { operands[0] }
   public var baseOperand: Operand { operands[1] }
   public var address: Value { return addressOperand.value }
   public var base: Value { return baseOperand.value }
+
+  public var dependenceKind: MarkDependenceKind {
+    MarkDependenceKind(rawValue: bridged.MarkDependenceAddrInst_dependenceKind().rawValue)!
+  }
+
+  public func resolveToNonEscaping() {
+    bridged.MarkDependenceAddrInst_resolveToNonEscaping()
+  }
+
+  public func settleToEscaping() {
+    bridged.MarkDependenceAddrInst_settleToEscaping()
+  }
 }
 
 final public class RefToBridgeObjectInst : SingleValueInstruction {

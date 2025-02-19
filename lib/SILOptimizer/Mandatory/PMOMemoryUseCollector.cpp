@@ -224,8 +224,7 @@ bool ElementUseCollector::collectContainerUses(SILValue boxValue) {
       continue;
     }
     if (auto mdi = MarkDependenceInstruction(user)) {
-      // Another value depends on the current in-memory value. Consider that a
-      // load.
+      // Another value depends on the current in-memory value.
       if (mdi.getBase() == ui->get()) {
         Uses.emplace_back(user, PMOUseKind::DependenceBase);
         continue;
@@ -471,24 +470,31 @@ bool ElementUseCollector::collectUses(SILValue Pointer) {
     if (User->isDebugInstruction())
       continue;
 
-    if (auto mdi = MarkDependenceInstruction(User)) {
-      if (mdi.getBase() == UI->get()) {
+    if (auto *mdi = dyn_cast<MarkDependenceInst>(User)) {
+      if (mdi->getBase() == UI->get()) {
         Uses.emplace_back(User, PMOUseKind::DependenceBase);
         continue;
       }
-      assert(mdi.getDependent() == UI->get() && "missing mark_dependence use");
+      assert(mdi->getValue() == UI->get() && "missing mark_dependence use");
       // A mark_dependence creates a new dependent value in the same memory
       // location. Analogous to a load + init.
       Uses.emplace_back(User, PMOUseKind::Load);
       Uses.emplace_back(User, PMOUseKind::Initialization);
       // Follow a forwarding mark_dependence.
-      if (auto *mdValue = dyn_cast<MarkDependenceInst>(User)) {
-        if (!collectUses(mdValue))
-          return false;
-      }
+      if (!collectUses(mdi))
+        return false;
+
       continue;
     }
-
+    if (auto *mdi = dyn_cast<MarkDependenceAddrInst>(User)) {
+      if (mdi->getBase() == UI->get()) {
+        Uses.emplace_back(User, PMOUseKind::DependenceBase);
+        continue;
+      }
+      // Ignore the address use. It can be eliminated if the allocation is
+      // unused.
+      continue;
+    }
     // Otherwise, the use is something complicated, it escapes.
     Uses.emplace_back(User, PMOUseKind::Escape);
   }

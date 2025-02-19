@@ -293,16 +293,25 @@ TransitiveAddressWalker<Impl>::walk(SILValue projectedAddress) && {
     }
 
     if (auto mdi = MarkDependenceInstruction(user)) {
-      // If this is the base, just treat it as a liveness use.
+      // If this is the base, just treat it as a regular use.
+      //
+      // TODO: it is wrong to stop walking at this base operand for the purpose
+      // of liveness. The API should make it clear that the client needs to
+      // continue walking to find dependent uses. See AddressUtils.swift.
       if (op->get() == mdi.getBase()) {
         callVisitUse(op);
         continue;
       }
-    }
-    if (auto *mdi = dyn_cast<MarkDependenceInst>(user)) {
-      // If we are the value use of a forwarding markdep, look through it.
-      transitiveResultUses(op);
-      continue;
+      if (auto *mdi = dyn_cast<MarkDependenceInst>(user)) {
+        // If we are the value use of a forwarding markdep, look through it.
+        transitiveResultUses(op);
+        continue;
+      }
+      if (auto *mdi = dyn_cast<MarkDependenceAddrInst>(user)) {
+        // The address operand is simply a leaf use.
+        callVisitUse(op);
+        continue;
+      }
     }
 
     // We were unable to recognize this user, so set AddressUseKind to unknown
