@@ -702,6 +702,10 @@ struct ImmutableAddressUseVerifier {
           if (builtinKind == BuiltinValueKind::AddressOfRawLayout) {
             return false;
           }
+          if (builtinKind == BuiltinValueKind::OverrideLifetime
+              || builtinKind == BuiltinValueKind::OverrideMutableLifetime) {
+            return use == &inst->getOperandRef(0);
+          }
         }
 
         // Otherwise this is a builtin that we are not expecting to see, so bail

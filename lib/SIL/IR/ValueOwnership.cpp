@@ -661,6 +661,8 @@ CONSTANT_OWNERSHIP_BUILTIN(None, InjectEnumTag)
 CONSTANT_OWNERSHIP_BUILTIN(Owned, DistributedActorAsAnyActor)
 CONSTANT_OWNERSHIP_BUILTIN(Guaranteed, ExtractFunctionIsolation) // unreachable
 CONSTANT_OWNERSHIP_BUILTIN(None, AddressOfRawLayout)
+CONSTANT_OWNERSHIP_BUILTIN(Owned, OverrideLifetime)
+CONSTANT_OWNERSHIP_BUILTIN(Owned, OverrideMutableLifetime)
 
 #undef CONSTANT_OWNERSHIP_BUILTIN
 

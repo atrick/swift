@@ -624,6 +624,9 @@ static bool usesFeatureAsyncExecutionBehaviorAttributes(Decl *decl) {
   return false;
 }
 
+UNINTERESTING_FEATURE(BuiltinOverrideLifetime)
+UNINTERESTING_FEATURE(BuiltinOverrideMutableLifetime)
+
 // ----------------------------------------------------------------------------
 // MARK: - FeatureSet
 // ----------------------------------------------------------------------------

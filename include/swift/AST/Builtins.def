@@ -818,6 +818,19 @@ BUILTIN_MISC_OPERATION(ResumeThrowingContinuationThrowing,
 /// (Builtin.RawPointer, Builtin.Word) -> Builtin.RawPointer
 BUILTIN_MISC_OPERATION(AssumeAlignment, "assumeAlignment", "n", Special)
 
+/// overrideLifetime: (consuming T, borrowing U) -> T
+///
+/// Returns the value of the first argument with a lifetime dependence to the
+/// second argument.
+///
+///   %dependsOnB = builtin "overrideLifetime" (%dependent : T, %source: U)
+BUILTIN_MISC_OPERATION(OverrideLifetime, "overrideLifetime", "n", Special)
+
+/// overrideMutableLifetime: (consuming T, inout U) -> T
+///
+/// Same as overrideLifetime, but with an inout dependency source.
+BUILTIN_MISC_OPERATION(OverrideMutableLifetime, "overrideMutableLifetime", "n", Special)
+
 // BUILTIN_MISC_OPERATION_WITH_SILGEN - Miscellaneous operations that are
 // specially emitted during SIL generation.
 //

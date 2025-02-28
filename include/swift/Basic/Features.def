@@ -257,6 +257,8 @@ LANGUAGE_FEATURE(SendableCompletionHandlers, 463, "Objective-C completion handle
 LANGUAGE_FEATURE(AsyncExecutionBehaviorAttributes, 0, "@concurrent and nonisolated(nonsending)")
 LANGUAGE_FEATURE(IsolatedConformances, 407, "Global-actor isolated conformances")
 LANGUAGE_FEATURE(ValueGenericsNameLookup, 452, "Value generics appearing as static members for namelookup")
+LANGUAGE_FEATURE(BuiltinOverrideLifetime, 0, "Builtin.overrideLifetime")
+LANGUAGE_FEATURE(BuiltinOverrideMutableLifetime, 0, "Builtin.overrideMutableLifetime")
 
 // Swift 6
 UPCOMING_FEATURE(ConciseMagicFile, 274, 6)

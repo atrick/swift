@@ -2270,6 +2270,30 @@ static ValueDecl *getEmplace(ASTContext &ctx, Identifier id) {
   return builder.build(id);
 }
 
+// <T: ~Copyable & ~Escapable, U: ~Copyable & ~Escapable>(T, U) -> T
+static ValueDecl *getOverrideLifetime(ASTContext &ctx, Identifier id) {
+  BuiltinFunctionBuilder builder(ctx, /* genericParamCount */ 2);
+  auto T = makeGenericParam(0);
+  auto U = makeGenericParam(1);
+  builder.addParameter(T, ParamSpecifier::Consuming);
+  builder.addParameter(U, ParamSpecifier::Borrowing);
+  builder.setResult(T);
+
+  return builder.build(id);
+}
+
+// <T: ~Copyable & ~Escapable, U: ~Copyable & ~Escapable>(T, U) -> T
+static ValueDecl *getOverrideMutableLifetime(ASTContext &ctx, Identifier id) {
+  BuiltinFunctionBuilder builder(ctx, /* genericParamCount */ 2);
+  auto T = makeGenericParam(0);
+  auto U = makeGenericParam(1);
+  builder.addParameter(T, ParamSpecifier::Consuming);
+  builder.addParameter(U, ParamSpecifier::InOut);
+  builder.setResult(T);
+
+  return builder.build(id);
+}
+
 /// An array of the overloaded builtin kinds.
 static const OverloadedBuiltinKind OverloadedBuiltinKinds[] = {
   OverloadedBuiltinKind::None,
@@ -3356,6 +3380,12 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
     
   case BuiltinValueKind::Emplace:
     return getEmplace(Context, Id);
+
+  case BuiltinValueKind::OverrideLifetime:
+    return getOverrideLifetime(Context, Id);
+
+  case BuiltinValueKind::OverrideMutableLifetime:
+    return getOverrideMutableLifetime(Context, Id);
   }
 
   llvm_unreachable("bad builtin value!");

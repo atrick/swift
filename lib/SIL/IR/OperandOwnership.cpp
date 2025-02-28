@@ -937,6 +937,11 @@ BUILTIN_OPERAND_OWNERSHIP(ForwardingConsume, COWBufferForReading)
 // This should actually never be seen in SIL
 BUILTIN_OPERAND_OWNERSHIP(GuaranteedForwarding, ExtractFunctionIsolation)
 
+// Although OverrideLifetime forwards the value, it is modeled as destroying the
+// old value and creating a new one with independent lifetime.
+BUILTIN_OPERAND_OWNERSHIP(DestroyingConsume, OverrideLifetime)
+BUILTIN_OPERAND_OWNERSHIP(DestroyingConsume, OverrideMutableLifetime)
+
 static OperandOwnership
 visitAnyFlowSensitiveSelfIsolation(BuiltinInst *bi) {
   // In potentially-delegating initializers, the operand will be the
