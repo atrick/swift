@@ -272,11 +272,8 @@ private func insertParameterDependencies(apply: LifetimeDependentApply, target: 
 
   sources.initializeBases(context)
 
-  if !target.value.type.isAddress {
-    let position = apply.applySite.location.sourceLoc
-    context.diagnosticEngine.diagnose(position, .lifetime_parameter_requires_inout)
-    return
-  }
+  assert(target.value.type.isAddress,
+         "lifetime-dependent parameter must be 'inout'")
 
   Builder.insert(after: apply.applySite, context) {
     insertMarkDependencies(value: target.value, initializer: nil, bases: sources.bases, builder: $0, context)

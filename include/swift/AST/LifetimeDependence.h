@@ -234,6 +234,10 @@ class LifetimeDependenceInfo {
   static std::optional<LifetimeDependenceInfo>
   inferSetter(AbstractFunctionDecl *afd);
 
+  /// Infer LifetimeDependenceInfo on self
+  static std::optional<LifetimeDependenceInfo>
+  inferSelf(AbstractFunctionDecl *afd);
+
   /// Infer LifetimeDependenceInfo on mutating self
   static std::optional<LifetimeDependenceInfo>
   inferMutatingSelf(AbstractFunctionDecl *afd);

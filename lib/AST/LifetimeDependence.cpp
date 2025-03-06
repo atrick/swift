@@ -232,18 +232,6 @@ static Type getResultOrYield(AbstractFunctionDecl *afd) {
   return afd->mapTypeIntoContext(resultType);
 }
 
-static bool hasEscapableResultOrYield(AbstractFunctionDecl *afd) {
-  auto resultType = getResultOrYield(afd);
-  // FIXME: This check is temporary until rdar://139976667 is fixed.
-  // ModuleType created with ModuleType::get methods are ~Copyable and
-  // ~Escapable because the Copyable and Escapable conformance is not added to
-  // them by default.
-  if (resultType->is<ModuleType>()) {
-    return true;
-  }
-  return resultType->isEscapable();
-}
-
 static std::optional<LifetimeDependenceKind>
 getLifetimeDependenceKind(LifetimeDescriptor descriptor,
                           AbstractFunctionDecl *afd, ParamDecl *decl) {
@@ -365,6 +353,11 @@ populateLifetimeDependence(AbstractFunctionDecl *afd, LifetimeEntry *entry) {
         getParamDeclFromDescriptor(afd, *targetDescriptor);
     if (!targetDeclAndIndex.has_value()) {
       return std::nullopt;
+    }
+    // TODO: support dependencies on non-inout parameters.
+    if (!targetDeclAndIndex->first->isInOut()) {
+      diags.diagnose(targetDeclAndIndex->first,
+                     diag::lifetime_parameter_requires_inout);
     }
     targetIndex = targetDeclAndIndex->second;
   } else {
@@ -525,34 +518,97 @@ std::optional<LifetimeDependenceInfo> LifetimeDependenceInfo::fromDependsOn(
           : nullptr);
 }
 
+// Return nullopt if no inference is needed. If inference is needed but not
+// satisfied, diagnose an error. Otherwise return the inferred dependencies.
 std::optional<LifetimeDependenceInfo>
-LifetimeDependenceInfo::infer(AbstractFunctionDecl *afd) {
+LifetimeDependenceInfo::inferOrDiagnose(AbstractFunctionDecl *afd) {
   auto *dc = afd->getDeclContext();
   auto &ctx = dc->getASTContext();
 
-  // Disable inference if requested.
+  auto resultType = getResultOrYield(afd);
+  if (resultType->hasError()) {
+    return std::nullopt;
+  }
+
+  // FIXME: This check is temporary until rdar://139976667 is fixed.
+  // ModuleType created with ModuleType::get methods are ~Copyable and
+  // ~Escapable because the Copyable and Escapable conformance is not added to
+  // them by default.
+  if (resultType->is<ModuleType>()) {
+    return std::nullopt;
+  }
+
+  // Methods and functions that return a non-Escapable value.
+  if (!resultType->isEscapable()) {
+    // non-Escapable results require the LifetimeDependence feature.
+    if (!ctx.LangOpts.hasFeature(Feature::LifetimeDependence)) {
+      diags.diagnose(returnLoc, diag::lifetime_dependence_feature_required);
+      return std::nullopt;
+    }
+    if (!cd && afd->hasImplicitSelfDecl()) {
+      return inferNonEscapableResultOnSelf(afd);
+    }
+    return inferNonEscapableResultOnParam();
+  }
+
   if (!ctx.LangOpts.EnableExperimentalLifetimeDependenceInference) {
     return std::nullopt;
   }
 
-  if (getResultOrYield(afd)->hasError()) {
-    return std::nullopt;
+  // Mutating methods
+  if (!cd && afd->hasImplicitSelfDecl()
+      && afd->getImplicitSelfDecl()->isInOut()) {
+    return inferMutatingSelf(afd);
   }
 
-  if (afd->getAttrs().hasAttribute<UnsafeNonEscapableResultAttr>()) {
-    return std::nullopt;
-  }
-
-  // Setters infer 'self' dependence on 'newValue'.
+  // Setters
   if (auto accessor = dyn_cast<AccessorDecl>(afd)) {
     if (accessor->getAccessorKind() == AccessorKind::Set) {
       return inferSetter(accessor);
     }
   }
 
-  if (hasEscapableResultOrYield(afd)) {
+  return std::nullopt;
+}
+
+std::optional<LifetimeDependenceInfo>
+LifetimeDependenceInfo::inferNonEscapableResultOnSelf(
+  AbstractFunctionDecl *afd) {
+  Type selfTypeInContext = dc->getSelfTypeInContext();
+  if (selfTypeInContext->isEscapable()
+      && isBitwiseCopyable(selfTypeInContext, ctx)) {
+    diags.diagnose(
+      returnLoc,
+      diag::lifetime_dependence_method_escapable_bitwisecopyable_self);
     return std::nullopt;
   }
+  auto kind = getLifetimeDependenceKindFromType(selfTypeInContext);
+  if (!ctx.LangOpts.EnableExperimentalLifetimeDependenceInference) {
+    // Do not infer Inherit by default -- it is ambiguous.
+    if (kind == LifetimeDependenceKind::Inherit)
+      return std::nullopt;
+
+    if (afd->getParameters()->size() > 0)
+      return std::nullopt;
+  }
+  auto selfOwnership = afd->getImplicitSelfDecl()->getValueOwnership();
+  if (!isLifetimeDependenceCompatibleWithOwnership(kind, selfTypeInContext,
+                                                     selfOwnership, afd)) {
+    diags.diagnose(returnLoc,
+                   diag::lifetime_dependence_invalid_self_ownership);
+    return std::nullopt;
+  }
+  // Infer method dependence: result depends on self.
+  //
+  // This includes _modify. A _modify's yielded value depends on self. The
+  // caller of the _modify ensures that the 'self' depends on any value stored
+  // to the yielded address.
+  return LifetimeDependenceInfo::getForIndex(
+    afd, resultIndex, /*selfIndex */ afd->getParameters()->size(), kind);
+}
+
+std::optional<LifetimeDependenceInfo> LifetimeDependenceInfo::inferNonEscapableResultOnParam(
+  AbstractFunctionDecl *afd) {
 
   auto &diags = ctx.Diags;
   auto returnTypeRepr = afd->getResultTypeRepr();
@@ -561,7 +617,10 @@ LifetimeDependenceInfo::infer(AbstractFunctionDecl *afd) {
                              ? afd->getParameters()->size() + 1
                              : afd->getParameters()->size();
 
+  // --- empty types
+
   auto *cd = dyn_cast<ConstructorDecl>(afd);
+  // Allow empty types to be initialized by default without any dependencies.
   if (cd && cd->getParameters()->size() == 0) {
     if (cd->isImplicit()) {
       return std::nullopt;
@@ -576,38 +635,7 @@ LifetimeDependenceInfo::infer(AbstractFunctionDecl *afd) {
     }
   }
 
-  if (!ctx.LangOpts.hasFeature(Feature::LifetimeDependence)) {
-    diags.diagnose(returnLoc, diag::lifetime_dependence_feature_required);
-    return std::nullopt;
-  }
-
-  if (!cd && afd->hasImplicitSelfDecl()) {
-    Type selfTypeInContext = dc->getSelfTypeInContext();
-    if (selfTypeInContext->isEscapable()) {
-      if (isBitwiseCopyable(selfTypeInContext, ctx)) {
-        diags.diagnose(
-            returnLoc,
-            diag::lifetime_dependence_method_escapable_bitwisecopyable_self);
-        return std::nullopt;
-      }
-    }
-    auto kind = getLifetimeDependenceKindFromType(selfTypeInContext);
-    auto selfOwnership = afd->getImplicitSelfDecl()->getValueOwnership();
-    if (!isLifetimeDependenceCompatibleWithOwnership(kind, selfTypeInContext,
-                                                     selfOwnership, afd)) {
-      diags.diagnose(returnLoc,
-                     diag::lifetime_dependence_invalid_self_ownership);
-      return std::nullopt;
-    }
-
-    // Infer method dependence: result depends on self.
-    //
-    // This includes _modify. A _modify's yielded value depends on self. The
-    // caller of the _modify ensures that the 'self' depends on any value stored
-    // to the yielded address.
-    return LifetimeDependenceInfo::getForIndex(
-        afd, resultIndex, /*selfIndex */ afd->getParameters()->size(), kind);
-  }
+  // --- methods
 
   std::optional<unsigned> candidateParamIndex;
   std::optional<LifetimeDependenceKind> candidateLifetimeKind;
@@ -669,29 +697,14 @@ LifetimeDependenceInfo::infer(AbstractFunctionDecl *afd) {
       afd, resultIndex, *candidateParamIndex, *candidateLifetimeKind);
 }
 
-/// Infer LifetimeDependence on a setter where 'self' is nonescapable.
-std::optional<LifetimeDependenceInfo> LifetimeDependenceInfo::inferSetter(
-  AbstractFunctionDecl *afd) {
-
-  auto *param = afd->getParameters()->get(0);
-  Type paramTypeInContext =
-    afd->mapTypeIntoContext(param->getInterfaceType());
-  if (paramTypeInContext->hasError()) {
-    return std::nullopt;
-  }
-  if (paramTypeInContext->isEscapable()) {
-    return std::nullopt;
-  }
-  auto kind = getLifetimeDependenceKindFromType(paramTypeInContext);
-  return LifetimeDependenceInfo::getForIndex(
-    afd, /*selfIndex */ afd->getParameters()->size(), 0, kind);
-}
-
 /// Infer LifetimeDependenceInfo on a mutating method where 'self' is
-/// nonescapable and the result is 'void'. For now, we'll assume that 'self'
-/// depends on a single nonescapable argument.
+/// nonescapable and the result is 'void'.
 std::optional<LifetimeDependenceInfo> LifetimeDependenceInfo::inferMutatingSelf(
   AbstractFunctionDecl *afd) {
+  Type selfTypeInContext = dc->getSelfTypeInContext();
+  if (selfTypeInContext->isEscapable()) {
+    return std::nullopt;
+  }
   std::optional<LifetimeDependenceInfo> dep;
   for (unsigned paramIndex : range(afd->getParameters()->size())) {
     auto *param = afd->getParameters()->get(paramIndex);
@@ -716,6 +729,26 @@ std::optional<LifetimeDependenceInfo> LifetimeDependenceInfo::inferMutatingSelf(
   return dep;
 }
 
+
+/// Infer LifetimeDependence on a setter where 'self' is nonescapable.
+std::optional<LifetimeDependenceInfo> LifetimeDependenceInfo::inferSetter(
+  AbstractFunctionDecl *afd) {
+
+  auto *param = afd->getParameters()->get(0);
+  Type paramTypeInContext =
+    afd->mapTypeIntoContext(param->getInterfaceType());
+  if (paramTypeInContext->hasError()) {
+    return std::nullopt;
+  }
+  if (paramTypeInContext->isEscapable()) {
+    return std::nullopt;
+  }
+  auto kind = getLifetimeDependenceKindFromType(paramTypeInContext);
+  return LifetimeDependenceInfo::getForIndex(
+    afd, /*selfIndex */ afd->getParameters()->size(), 0,
+    LifetimeDependenceInfo::Inherit);
+}
+
 std::optional<llvm::ArrayRef<LifetimeDependenceInfo>>
 LifetimeDependenceInfo::get(AbstractFunctionDecl *afd) {
   assert(isa<FuncDecl>(afd) || isa<ConstructorDecl>(afd));
@@ -725,7 +758,7 @@ LifetimeDependenceInfo::get(AbstractFunctionDecl *afd) {
   }
 
   SmallVector<LifetimeDependenceInfo, 1> lifetimeDependencies;
-  auto resultDependence = LifetimeDependenceInfo::infer(afd);
+  auto resultDependence = LifetimeDependenceInfo::inferOrDiagnose(afd);
   if (!resultDependence.has_value()) {
     return std::nullopt;
   }

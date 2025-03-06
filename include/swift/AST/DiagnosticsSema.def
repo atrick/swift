@@ -8142,6 +8142,12 @@ ERROR(lifetime_dependence_feature_required, none,
       "returning ~Escapable type requires '-enable-experimental-feature "
       "LifetimeDependence'", ())
 
+
+// Unimplemented features
+
+ERROR(lifetime_parameter_requires_inout, none,
+      "lifetime-dependent parameter must be 'inout'", ())
+
 //===----------------------------------------------------------------------===//
 //                             MARK: Sending
 //===----------------------------------------------------------------------===//
