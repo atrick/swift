@@ -600,3 +600,19 @@ func testBorrowedAddressableIntReturn(arg: Holder) -> Span<Int> {
 } // todo-note  {{this use causes the lifetime-dependent value to escape}}
 
 */
+
+
+// =============================================================================
+// Parameter dependencies
+// =============================================================================
+
+@lifetime(span: borrow holder)
+func hasParameterDep(holder: Holder, span: Span<Int>) {}
+
+// If this functionality is not implemented, then the diagnostic should be moved
+// to the type checker and should occur on the hasParameterDep declaration.
+//
+// rdar://146401190 ([nonescapable] implement non-inout parameter dependencies)
+func testParameterDep(holder: Holder, span: Span<Int>) {
+  hasParameterDep(holder: holder, span: span) // expected-error {{lifetime-dependent parameter must be 'inout'}}
+}
