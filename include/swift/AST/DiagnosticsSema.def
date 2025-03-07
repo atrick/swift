@@ -8141,6 +8141,9 @@ ERROR(lifetime_dependence_duplicate_target, none,
 ERROR(lifetime_dependence_feature_required, none,
       "returning ~Escapable type requires '-enable-experimental-feature "
       "LifetimeDependence'", ())
+ERROR(lifetime_dependence_cannot_infer_no_kind, none,
+      "cannot infer lifetime dependence kind on ~Escapable %0, 'borrow' or "
+      "'copy' must be specified", (StringRef))
 
 
 // Unimplemented features
