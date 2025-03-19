@@ -20,7 +20,6 @@ var suite = TestSuite("StringUTF8StorageProperty")
 defer { runAllTests() }
 
 suite.test("Span from Small String")
-  .skip(.always("Support inline-stored Spans forthcoming"))
 .require(.stdlib_6_2).code {
   guard #available(SwiftStdlib 6.2, *) else { return }
 
@@ -53,7 +52,6 @@ suite.test("Span from Large Native String")
 }
 
 suite.test("Span from Small String's Substring")
-.skip(.always("Support inline-stored Spans forthcoming"))
 .require(.stdlib_6_2).code {
   guard #available(SwiftStdlib 6.2, *) else { return }
 
