@@ -302,6 +302,15 @@ public:
     return conditionallyAddressableParamIndices;
   }
 
+  LifetimeDependenceInfo withConditionallyAddressableIndices(
+    IndexSubset *newConditionallyAddressableIndices) const {
+    return LifetimeDependenceInfo(inheritLifetimeParamIndices,
+                                  scopeLifetimeParamIndices,
+                                  targetIndex, isImmortal(),
+                                  getAddressableIndices(),
+                                  newConditionallyAddressableIndices);
+  }
+
   bool checkInherit(int index) const {
     return inheritLifetimeParamIndices
       && inheritLifetimeParamIndices->contains(index);
