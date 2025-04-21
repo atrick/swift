@@ -1537,5 +1537,13 @@ void irgen::emitBuiltinCall(IRGenFunction &IGF, const BuiltinInfo &Builtin,
     return;
   }
 
+  //!!! remove this. the builtin should have been deleted.
+  if (Builtin.ID == BuiltinValueKind::OverrideLifetime) {
+    // A no-op pointer cast that passes on its first value.
+    auto dependent = args.claimNext();
+    (void)args.claimAll();
+    out.add(dependent);
+    return;
+  }
   llvm_unreachable("IRGen unimplemented for this builtin!");
 }

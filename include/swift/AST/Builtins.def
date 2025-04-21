@@ -1138,6 +1138,21 @@ BUILTIN_MISC_OPERATION_WITH_SILGEN(AddressOfRawLayout, "addressOfRawLayout", "n"
 /// memory becomes the result of the call.
 BUILTIN_SIL_OPERATION(Emplace, "emplace", Special)
 
+/// overrideLifetime: (consuming T, borrowing U) -> T
+///
+/// Returns the value of the first argument with a lifetime dependence to the
+/// second argument.
+///
+///   %dependsOnB = builtin "overrideLifetime" (%dependent : T, %source: U)
+BUILTIN_MISC_OPERATION_WITH_SILGEN(OverrideLifetime, "overrideLifetime",
+                                   "n", Special)
+
+/// overrideMutableLifetime: (consuming T, inout U) -> T
+///
+/// Same as overrideLifetime, but with an inout dependency source.
+BUILTIN_MISC_OPERATION_WITH_SILGEN(OverrideMutableLifetime,
+                                   "overrideMutableLifetime", "n", Special)
+
 /// Builtins for instrumentation added by sanitizers during SILGen.
 #ifndef BUILTIN_SANITIZER_OPERATION
 #define BUILTIN_SANITIZER_OPERATION(Id, Name, Attrs) BUILTIN(Id, Name, Attrs)

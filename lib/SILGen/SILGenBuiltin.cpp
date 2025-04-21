@@ -1544,6 +1544,56 @@ static ManagedValue emitBuiltinAlignof(
       SILType::getBuiltinWordType(ctx), subs, {}));
 }
 
+//!!! FIXME: Figure out how to handle indirect Builtin results. It seems best to
+//!!! use ResultPlan, but no other builtins use ResultPlan.
+static ManagedValue emitBuildOverrideLifetime(SILGenFunction &SGF,
+                                              SILLocation loc,
+                                              SubstitutionMap subs,
+                                              ArrayRef<ManagedValue> args,
+                                              SGFContext evalContext,
+                                              BuiltinValueKind builtin) {
+  ASTContext &ctx = SGF.getASTContext();
+  auto builtinID = ctx.getIdentifier(getBuiltinName(builtin));
+
+  auto formalType = callee.getSubstFormalType();
+  auto origFormalType = AbstractionPattern(formalType);
+  auto substFnType = SGF.getSILFunctionType(
+      SGF.getTypeExpansionContext(), origFormalType, formalType);
+  SILFunctionConventions substConv(substFnType, SGF.SGM.M);
+
+  auto calleeTypeInfo = callee.getTypeInfo(SGF);
+
+  SmallVector<SILValue, 4> rawArgs;
+init->getAddressForInPlaceInitialization(SGF, loc));
+  ResultPlanPtr resultPlan = ResultPlanBuilder::computeResultPlan(
+    SGF, *calleeTypeInfo, loc, evalContext);
+  resultPlan->gatherIndirectResultAddrs(SGF, loc, rawArgs);
+
+  rawArgs.push_back(
+    args[0].ensurePlusOne(SGF, loc).forward(SGF));
+  rawArgs.push_back(args[1].borrow(SGF, loc).getValue());
+
+  auto builtinApply = SGF.B.createBuiltin(
+    loc, builtinID, substConv.getSILResultType(SGF.getTypeExpansionContext()),
+    subs, rawArgs);
+
+//!!!return
+}
+
+static ManagedValue emitBuiltinOverrideLifetime(
+    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
+    ArrayRef<ManagedValue> args, SGFContext C) {
+  return emitBuildOverrideLifetime(SGF, loc, subs, args, C,
+                                   BuiltinValueKind::OverrideLifetime);
+}
+
+static ManagedValue emitBuiltinOverrideMutableLifetime(
+    SILGenFunction &SGF, SILLocation loc, SubstitutionMap subs,
+    ArrayRef<ManagedValue> args, SGFContext C) {
+  return emitBuildOverrideLifetime(SGF, loc, subs, args, C,
+                                   BuiltinValueKind::OverrideMutableLifetime);
+}
+
 enum class CreateTaskOptions {
   /// The builtin has optional arguments for everything.
   OptionalEverything = 0x1,

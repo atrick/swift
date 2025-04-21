@@ -294,6 +294,17 @@ TransitiveAddressWalker<Impl>::walk(SILValue projectedAddress) {
         case BuiltinValueKind::FlowSensitiveDistributedSelfIsolation:
           callVisitUse(op);
           continue;
+        case BuiltinValueKind::OverrideLifetime:
+        case BuiltinValueKind::OverrideMutableLifetime:
+          if (op == &builtin->getOperandRef(0)) {
+            transitiveResultUses(op);
+            continue;
+          }
+          // TODO: continue walking the dependent value, which may not be an
+          // address (this visitor needs to handle dependent values first).
+          recordEscape(op, AddressUseKind::Dependent);
+          callVisitUse(op);
+          continue;
         default:
           break;
         }

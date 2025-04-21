@@ -692,6 +692,10 @@ UNOWNED_OR_NONE_DEPENDING_ON_RESULT(ShuffleVector)
 // fields. The initialized value is immediately consumed by an assignment, so it
 // must be owned.
 OWNED_OR_NONE_DEPENDING_ON_RESULT(ZeroInitializer)
+
+// FIXME!!!: should always be a trivial address type
+OWNED_OR_NONE_DEPENDING_ON_RESULT(OverrideLifetime)
+OWNED_OR_NONE_DEPENDING_ON_RESULT(OverrideMutableLifetime)
 #undef OWNED_OR_NONE_DEPENDING_ON_RESULT
 
 #define BUILTIN(X,Y,Z)

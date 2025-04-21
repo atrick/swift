@@ -1013,6 +1013,30 @@ visitResumeThrowingContinuationThrowing(BuiltinInst *bi, StringRef attr) {
   return OperandOwnership::TrivialUse;
 }
 
+// Similar to mark_dependence_inst [noescape]
+//
+//!!! FIXME: only allow address types. the Builtin should be SILGen's as
+//!!! generic, and it should be removed before it needs to be
+//!!! specialized/optimized.
+OperandOwnership
+OperandOwnershipBuiltinClassifier::visitOverrideLifetime(BuiltinInst *bi,
+                                                         StringRef attr) {
+  if (&op == &bi->getOperandRef(0)) {
+    return op.get()->getOwnershipKind().getForwardingOperandOwnership(
+      /*allowUnowned*/false);
+  }
+  // The dependency is represented by inserting a mark_dependence_inst
+  // (LifetimeDependenceInsertion). So the base operand can be treated like a
+  // simply instantaneous use.
+  return OperandOwnership::InstantaneousUse;
+}
+
+OperandOwnership
+OperandOwnershipBuiltinClassifier::visitOverrideMutableLifetime(
+  BuiltinInst *bi, StringRef attr) {
+  return visitOverrideLifetime(bi, attr);
+}
+
 BUILTIN_OPERAND_OWNERSHIP(InstantaneousUse, TaskRunInline)
 
 BUILTIN_OPERAND_OWNERSHIP(InstantaneousUse, CancelAsyncTask)

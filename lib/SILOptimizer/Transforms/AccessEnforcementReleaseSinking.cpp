@@ -165,6 +165,8 @@ static bool isBarrier(SILInstruction *inst) {
     case BuiltinValueKind::FlowSensitiveSelfIsolation:
     case BuiltinValueKind::FlowSensitiveDistributedSelfIsolation:
     case BuiltinValueKind::AddressOfRawLayout:
+    case BuiltinValueKind::OverrideLifetime:
+    case BuiltinValueKind::OverrideMutableLifetime:
       return false;
 
     // Handle some rare builtins that may be sensitive to object lifetime
