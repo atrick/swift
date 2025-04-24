@@ -279,10 +279,18 @@ extension LifetimeDependence.Scope {
     case let .box(projectBox):
       // Note: the box may be in a borrow scope.
       self.init(base: projectBox.operand.value, context)
-    case .stack, .class, .tail, .pointer, .index:
+    case .class, .tail, .pointer, .index:
       self = .unknown(accessBase.address!)
     case .unidentified:
       self = .unknown(address)
+    case let .stack(allocStack):
+      if let initializer = accessBase.findSingleInitializer(context) {
+        if case let .store(store, _) = initializer {
+          self = .initialized(.store(initializingStore: store, initialAddress: allocStack))
+          return
+        }
+      }
+      self = .unknown(allocStack)
     case .global:
       // TODO: When AccessBase directly stores GlobalAccessBase, we don't need a check here and don't need to pass
       // 'address' in to this function.
