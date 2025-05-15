@@ -97,6 +97,7 @@ bool DestructorAnalysis::isSafeType(CanType Ty) {
   }
 
   // TODO: enum types.
+  //!!! handle enum types!
 
   return cacheResult(Ty, false);
 }
