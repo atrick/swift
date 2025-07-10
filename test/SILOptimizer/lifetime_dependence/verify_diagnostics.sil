@@ -22,6 +22,8 @@ class C {}
 
 struct NE : ~Escapable {}
 
+struct NC : ~Copyable {}
+
 struct NEObject : ~Escapable {
   var c: C
 
@@ -45,6 +47,7 @@ struct NCWrapper : ~Copyable, ~Escapable {
 }
 
 sil @getNEPointer : $@convention(thin) (@guaranteed NE) -> Builtin.RawPointer
+sil @getNCNEPointer : $@convention(thin) (@guaranteed NC) -> Builtin.RawPointer
 sil @useA : $@convention(thin) (A) -> ()
 sil @makeNE : $@convention(thin) () -> @lifetime(immortal) @owned NE
 sil @makeNEObject : $@convention(thin) () -> @lifetime(immortal) @owned NEObject
@@ -59,7 +62,8 @@ sil @initTrivialHolder : $@convention(thin) () -> @out TrivialHolder
 sil @getTrivialNE : $@convention(thin) (@in_guaranteed TrivialHolder) -> @lifetime(borrow address_for_deps 0) @owned NE
 
 sil @makeHolder: $@convention(method) (@thin Holder.Type) -> @owned Holder // user: %6
-sil @getGeneric : $@convention(thin) <τ_0_0 where τ_0_0 : ~Escapable> (@guaranteed Holder, @thick τ_0_0.Type) -> @lifetime(borrow 0) @out τ_0_0 // user: %12
+sil @getGeneric : $@convention(thin) <τ_0_0 where τ_0_0 : ~Escapable> (@guaranteed Holder, @thick τ_0_0.Type) -> @lifetime(borrow 0) @out τ_0_0
+sil @getGenericNE : $@convention(thin) <τ_0_0> (@in_guaranteed τ_0_0) -> @lifetime(borrow 0) @owned NE
 
 // Test returning a owned dependence on a trivial value
 sil [ossa] @return_trivial_dependence : $@convention(thin) (@guaranteed C) -> @lifetime(borrow 0) @owned NE {
@@ -245,4 +249,20 @@ bb0(%0 : $*NE, %1 : $*Holder):
   dealloc_stack %2
   %18 = tuple ()
   return %18
+}
+
+sil [ossa] @testChainedMarkDep : $@convention(thin) (@in_guaranteed NC) -> @lifetime(borrow 0) @owned NE {
+bb0(%0 : $*NC):
+  %3 = load_borrow %0
+
+  %4 = function_ref @getNCNEPointer : $@convention(thin) (@guaranteed NC) -> Builtin.RawPointer
+  %5 = apply %4(%3) : $@convention(thin) (@guaranteed NC) -> Builtin.RawPointer
+  %7 = pointer_to_address %5 to [strict] $*A
+  %8 = mark_dependence [unresolved] %7 on %0
+
+  %9 = function_ref @getGenericNE : $@convention(thin) <τ_0_0> (@in_guaranteed τ_0_0) -> @lifetime(borrow 0) @owned NE
+  %10 = apply %9<A>(%8) : $@convention(thin) <τ_0_0> (@in_guaranteed τ_0_0) -> @lifetime(borrow 0) @owned NE
+  %11 = mark_dependence [unresolved] %10 on %8
+  end_borrow %3
+  return %11
 }

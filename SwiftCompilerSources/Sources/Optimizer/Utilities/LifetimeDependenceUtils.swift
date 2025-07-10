@@ -266,6 +266,21 @@ extension LifetimeDependence.Scope {
     case let .base(accessBase):
       self.init(accessBase: accessBase, address: address, context)
     case let .dependence(markDep):
+      // If the value operand is from an unsafepointer, then the base "overrides" its scope.
+      // This commonly happens with unsafeAddress in which the returned pointer depends on 'self'.
+      if markDep.value.type.isAddress {
+        switch markDep.value.enclosingAccessScope {
+        case let .base(accessBase):
+          if case .pointer = accessBase {
+            self.init(base: markDep.base, context)
+            return
+          }
+        default:
+          break
+        }
+      }
+      // TODO: in general, a mark dependence is a conjunction of scopes. Consider handling thus case as multiple
+      // scopes.
       self = .unknown(markDep)
     }
   }
