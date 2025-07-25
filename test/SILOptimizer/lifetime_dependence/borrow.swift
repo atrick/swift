@@ -57,6 +57,6 @@ public struct _Borrow<Value: ~Copyable>: Copyable, ~Escapable {
   }
 }
 
-func testAddressableBorrow(arg: Borrow<>) {
-  //!!!
+func testReborrow<T: ~Copyable>(borrowed: borrowing Borrow<T>) -> Borrow<T> {
+  Borrow(borrowed[])
 }
