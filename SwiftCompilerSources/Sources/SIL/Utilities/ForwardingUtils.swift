@@ -16,6 +16,8 @@
 /// is part of a forward-extended lifetime that has a pointer escape.
 //===----------------------------------------------------------------------===//
 
+import SIL
+
 private let verbose = false
 
 private func log(_ message: @autoclosure () -> String) {

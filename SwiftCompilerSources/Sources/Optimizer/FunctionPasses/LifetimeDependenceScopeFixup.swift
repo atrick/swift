@@ -523,6 +523,31 @@ extension ScopeExtension {
   }
 }
 
+extension Value {
+  // During diagnostics fake copies exist for move-only types. They need to be ignored when finding the root of a
+  // borro. This could be avoided if we canonicalized move-only lifetimes at the same time as canonicalizing the scopes
+  // of lifetime dependent values.
+  func lookThoughMoveOnlyCopies() -> Value {
+    switch self {
+    case is MarkUnresolvedNonCopyableValueInst,
+         is CopyableToMoveOnlyWrapperValueInst,
+         is MoveOnlyWrapperToCopyableValueInst,
+         is MoveValueInst,
+         is DropDeinitInst:
+      return (self as! Instruction).operands[0].value.lookThoughMoveOnlyCopies()
+
+    case let copy as CopyValueInst:
+      if copy.type.isMoveOnly {
+        return copy.fromValue.lookThoughMoveOnlyCopies()
+      }
+      return self
+      
+    default:
+      return self
+    }
+  }
+}
+
 extension ScopeExtension {
   /// Check if the dependent value depends only on function arguments and can therefore be returned to caller. If so,
   /// return the list of arguments that it depends on. If this returns an empty list, then the dependent value cannot be
@@ -543,6 +568,15 @@ extension ScopeExtension {
       switch extScope.scope {
       case .access:
         break
+      /*
+        //!!! look through fake copies of a move-only type which have not yet been removed by the move-checker.
+      case let .owned(value):
+        break //!!!
+        /// A borrowed value whose OSSA lifetime encloses nonescapable values, or a trivial variable introduced by
+        /// begin_borrow.
+      case let .borrowed(beginBorrowValue):
+        break //!!!
+      */
       default:
         return noCallerScope
       }
