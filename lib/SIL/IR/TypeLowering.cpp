@@ -2601,7 +2601,6 @@ namespace {
 
       if (origType.isNoncopyable(structType)) {
         properties.setNonTrivial();
-        properties.setLexical(IsLexical);
         if (properties.isAddressOnly())
           return handleMoveOnlyAddressOnly(structType, properties);
         return new (TC) MoveOnlyLoadableStructTypeLowering(
@@ -2704,7 +2703,6 @@ namespace {
 
       if (origType.isNoncopyable(enumType)) {
         properties.setNonTrivial();
-        properties.setLexical(IsLexical);
         if (properties.isAddressOnly())
           return handleMoveOnlyAddressOnly(enumType, properties);
         return new (TC)

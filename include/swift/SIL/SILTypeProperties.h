@@ -227,6 +227,9 @@ public:
   IsInfiniteType_t isInfinite() const {
     return IsInfiniteType_t((Flags & InfiniteFlag) != 0);
   }
+  // TypeLowering uses the Lexical flag to indicate that the type is nontrivial
+  // and that the eager-move attribute is absent. SILGen decides whether that
+  // variables of this type actually have a lexical lifetime.
   IsLexical_t isLexical() const {
     return IsLexical_t((Flags & LexicalFlag) != 0);
   }
