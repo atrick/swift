@@ -1022,8 +1022,8 @@ extension LifetimeDependenceDefUseWalker {
       // of its forwarded address has were visited by LocalVariableAccessWalker and recorded as separate local accesses.
       return .continueWalk
     case .store, .storeBorrow:
-      // A store does not use the previous in-memory value.
-      return .continueWalk
+      // A store forces the previous in-memory value to be alive so it can be destroyed.
+      return leafUse(of: localAccess.operand!)
     case .apply:
       return visitAppliedUse(of: localAccess.operand!, by: localAccess.instruction as! FullApplySite)
     case .escape:

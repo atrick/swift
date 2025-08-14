@@ -881,9 +881,7 @@ extension LocalVariableReachableAccess {
       currentEffect = BlockEffect(for: accessInfo, accessMap.context).meet(currentEffect)
       switch currentEffect! {
       case .assign:
-        if lifetime {
-          accessStack.push(accessInfo.access)
-        }
+        accessStack.push(accessInfo.access)
         return currentEffect
       case .escape:
         if !lifetime {
