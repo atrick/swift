@@ -993,7 +993,7 @@ void SILGenFunction::collectThunkParams(
     auto paramTy = F.mapTypeIntoContext(resultTy);
     // Lower result parameters in the context of the function: opaque result
     // types will be lowered to their underlying type if allowed by resilience.
-    auto inContextParamTy = F.getLoweredType(paramTy)
+    auto inContextParamTy = F.getLoweredType(paramTy.getASTType())
                                 .getCategoryType(paramTy.getCategory());
     SILArgument *arg = F.begin()->createFunctionArgument(inContextParamTy);
     if (indirectResults)
@@ -1004,7 +1004,7 @@ void SILGenFunction::collectThunkParams(
     assert(F.getConventions().getNumIndirectSILErrorResults() == 1);
     auto paramTy = F.mapTypeIntoContext(
                        F.getConventions().getSILErrorType(getTypeExpansionContext()));
-    auto inContextParamTy = F.getLoweredType(paramTy)
+    auto inContextParamTy = F.getLoweredType(paramTy.getASTType())
                                 .getCategoryType(paramTy.getCategory());
     SILArgument *arg = F.begin()->createFunctionArgument(inContextParamTy);
     if (indirectErrors)
@@ -1020,7 +1020,7 @@ void SILGenFunction::collectThunkParams(
         F.getConventions().getSILType(param, getTypeExpansionContext()));
     // Lower parameters in the context of the function: opaque result types will
     // be lowered to their underlying type if allowed by resilience.
-    auto inContextParamTy = F.getLoweredType(paramTy)
+    auto inContextParamTy = F.getLoweredType(paramTy.getASTType())
                                 .getCategoryType(paramTy.getCategory());
     auto functionArgument =
         B.createInputFunctionArgument(inContextParamTy, loc);
