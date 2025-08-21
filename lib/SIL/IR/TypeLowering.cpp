@@ -2609,17 +2609,25 @@ namespace {
           applyLifetimeAnnotation(D->getLifetimeAnnotation(), properties);
 
       if (origType.isNoncopyable(structType)) {
+        // non-Copyable types are considered non-Trivial even if all the stored
+        // properties are trivial.
         properties.setNonTrivial();
+        // Set the lexical flag to be consistent with non-trivial type lowering.
         properties.setLexical(IsLexical);
         if (properties.isAddressOnly())
           return handleMoveOnlyAddressOnly(structType, properties);
         return new (TC) MoveOnlyLoadableStructTypeLowering(
             structType, properties, Expansion);
       }
-      // Regardless of their member types, Nonescapable values have ownership
-      // for lifetime diagnostics.
+      // isEscapable flags override isNoncopyable flags.
       if (!origType.isEscapable(structType)) {
+        // non-Escapable types are considered non-Trivial even if all the
+        // stored properties are trivial. This supports ownership diagnostics.
         properties.setNonTrivial();
+        // non-Escapable types never have lexical lifetimes, even if they are
+        // non-Copyable. (If they have a deinit, then they still have strict
+        // lifetimes).
+        properties.setLexical(IsNotLexical);
       }
       return handleAggregateByProperties<LoadableStructTypeLowering>(structType,
                                                                     properties);
@@ -2712,17 +2720,25 @@ namespace {
           applyLifetimeAnnotation(D->getLifetimeAnnotation(), properties);
 
       if (origType.isNoncopyable(enumType)) {
+        // non-Copyable types are considered non-Trivial even if all the stored
+        // properties are trivial.
         properties.setNonTrivial();
+        // Set the lexical flag to be consistent with non-trivial type lowering.
         properties.setLexical(IsLexical);
         if (properties.isAddressOnly())
           return handleMoveOnlyAddressOnly(enumType, properties);
         return new (TC)
             MoveOnlyLoadableEnumTypeLowering(enumType, properties, Expansion);
       }
-      // Regardless of their member types, Nonescapable values have ownership
-      // for lifetime diagnostics.
+      // isEscapable flags override isNoncopyable flags.
       if (!origType.isEscapable(enumType)) {
+        // non-Escapable types are considered non-Trivial even if all the
+        // stored properties are trivial. This supports ownership diagnostics.
         properties.setNonTrivial();
+        // non-Escapable types never have lexical lifetimes, even if they are
+        // non-Copyable. (If they have a deinit, then they still have strict
+        // lifetimes).
+        properties.setLexical(IsNotLexical);
       }
       return handleAggregateByProperties<LoadableEnumTypeLowering>(enumType,
                                                                    properties);
@@ -3171,6 +3187,11 @@ void TypeConverter::verifyLexicalLowering(const TypeLowering &lowering,
   if (!lowering.isTrivial() && !lowering.isLexical()) {
     if (lowering.getRecursiveProperties().isInfinite())
       return;
+
+    // non-Escapable types are never lexical.
+    if (!origType.isEscapable(loweredType))
+      return;
+
     auto getLifetimeAnnotation = [](CanType ty) -> LifetimeAnnotation {
       NominalTypeDecl *nominal;
       if (!(nominal = ty.getAnyNominal()))
