@@ -1135,13 +1135,14 @@ private:
   /// Check the result of
   /// getTypeLowering(AbstractionPattern,Type,TypeExpansionContext).
   void verifyLowering(const TypeLowering &, AbstractionPattern origType,
-                      CanType origSubstType,
+                      CanType loweredType,
                       TypeExpansionContext forExpansion);
   void verifyLexicalLowering(const TypeLowering &, AbstractionPattern origType,
-                             CanType origSubstType,
+                             CanType substType,
+                             CanType loweredType,
                              TypeExpansionContext forExpansion);
   void verifyTrivialLowering(const TypeLowering &, AbstractionPattern origType,
-                             CanType origSubstType,
+                             CanType loweredType,
                              TypeExpansionContext forExpansion);
   bool
   visitAggregateLeaves(Lowering::AbstractionPattern origType, CanType substType,

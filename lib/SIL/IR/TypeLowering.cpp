@@ -3152,18 +3152,19 @@ bool TypeConverter::visitAggregateLeaves(
 
 void TypeConverter::verifyLowering(const TypeLowering &lowering,
                                    AbstractionPattern origType,
-                                   CanType substType,
+                                   CanType loweredType,
                                    TypeExpansionContext forExpansion) {
   if (TypeLoweringDisableVerification) {
     return;
   }
-  verifyLexicalLowering(lowering, origType, substType, forExpansion);
-  verifyTrivialLowering(lowering, origType, substType, forExpansion);
+  verifyLexicalLowering(lowering, origType, loweredType,
+                        forExpansion);
+  verifyTrivialLowering(lowering, origType, loweredType, forExpansion);
 }
 
 void TypeConverter::verifyLexicalLowering(const TypeLowering &lowering,
                                           AbstractionPattern origType,
-                                          CanType substType,
+                                          CanType loweredType,
                                           TypeExpansionContext forExpansion) {
   // Non-trivial lowerings should always be lexical unless all non-trivial
   // fields are eager move.
@@ -3177,7 +3178,7 @@ void TypeConverter::verifyLexicalLowering(const TypeLowering &lowering,
       return nominal->getLifetimeAnnotation();
     };
     bool hasNoNontrivialLexicalLeaf = visitAggregateLeaves(
-        origType, substType, forExpansion,
+        origType, loweredType, forExpansion,
         /*isLeaf=*/
         [&](auto ty, auto origTy, auto *field, auto index) -> bool {
           // The field's type is an aggregate.  Treat it as a leaf if it
@@ -3201,7 +3202,7 @@ void TypeConverter::verifyLexicalLowering(const TypeLowering &lowering,
 
           // If the leaf is the whole type, verify that it is annotated
           // @_eagerMove.
-          if (ty == substType)
+          if (ty == loweredType)
             return getLifetimeAnnotation(ty) == LifetimeAnnotation::EagerMove;
 
           auto &tyLowering = getTypeLowering(origTy, ty, forExpansion);
@@ -3234,7 +3235,7 @@ void TypeConverter::verifyLexicalLowering(const TypeLowering &lowering,
 
 void TypeConverter::verifyTrivialLowering(const TypeLowering &lowering,
                                           AbstractionPattern origType,
-                                          CanType substType,
+                                          CanType loweredType,
                                           TypeExpansionContext forExpansion) {
   auto *bitwiseCopyableProtocol =
       Context.getProtocol(KnownProtocolKind::BitwiseCopyable);
@@ -3243,12 +3244,12 @@ void TypeConverter::verifyTrivialLowering(const TypeLowering &lowering,
 
   // We can't check conditional requirements in this case. Why are we seeing
   // interface types here at all?
-  if (substType->hasTypeParameter())
+  if (loweredType->hasTypeParameter())
     return;
 
-  auto conformance = checkConformance(substType, bitwiseCopyableProtocol);
+  auto conformance = checkConformance(loweredType, bitwiseCopyableProtocol);
 
-  if (auto *nominal = substType.getAnyNominal()) {
+  if (auto *nominal = loweredType.getAnyNominal()) {
     auto *module = nominal->getModuleContext();
     if (module && module->isBuiltFromInterface()) {
         // Don't verify for types in modules built from interfaces; the feature
@@ -3290,7 +3291,7 @@ void TypeConverter::verifyTrivialLowering(const TypeLowering &lowering,
     // (9) explicitly suppressing conformance
     // (10) a layout constrained archetype
     bool hasNoNonconformingNode = visitAggregateLeaves(
-        origType, substType, forExpansion,
+        origType, loweredType, forExpansion,
         /*isLeafAggregate=*/
         [&](auto ty, auto origTy, auto *field, auto index) -> bool {
           // These show up in the context of non-conforming variadic generics
@@ -3352,7 +3353,7 @@ void TypeConverter::verifyTrivialLowering(const TypeLowering &lowering,
             return false;
 
           // A BitwiseCopyable conformer appearing within its layout doesn't
-          // explain why substType doesn't itself conform.
+          // explain why loweredType doesn't itself conform.
           if (checkConformance(ty, bitwiseCopyableProtocol))
             return true;
 
@@ -3395,7 +3396,7 @@ void TypeConverter::verifyTrivialLowering(const TypeLowering &lowering,
             llvm::errs()
                 << "Non-nominal type without conformance to BitwiseCopyable:\n"
                 << ty << "\n"
-                << "within " << substType << "\n"
+                << "within " << loweredType << "\n"
                 << "of " << origType << "\n";
             assert(false);
             return true;
@@ -3433,7 +3434,7 @@ void TypeConverter::verifyTrivialLowering(const TypeLowering &lowering,
         });
     if (hasNoNonconformingNode) {
       llvm::errs() << "Trivial type without a BitwiseCopyable conformance!?:\n"
-                   << substType << "\n"
+                   << loweredType << "\n"
                    << "of " << origType << "\n"
                    << "Disable this validation with -Xllvm "
                       "-type-lowering-disable-verification.\n";
@@ -3449,7 +3450,7 @@ void TypeConverter::verifyTrivialLowering(const TypeLowering &lowering,
     // (3) containing or being ~Escapable
     // (4) containing or being an opaque archetype
     bool hasNoConformingArchetypeNode = visitAggregateLeaves(
-        origType, substType, forExpansion,
+        origType, loweredType, forExpansion,
         /*isLeaf=*/
         [&](auto ty, auto origTy, auto *field, auto index) -> bool {
           // A resilient type that's with minimal expansion may be non-trivial
@@ -3505,7 +3506,7 @@ void TypeConverter::verifyTrivialLowering(const TypeLowering &lowering,
         });
     if (hasNoConformingArchetypeNode) {
       llvm::errs() << "Non-trivial type with BitwiseCopyable conformance!?:\n"
-                   << substType << "\n";
+                   << loweredType << "\n";
       conformance.print(llvm::errs());
       llvm::errs() << "\n"
                    << "Disable this validation with -Xllvm "
