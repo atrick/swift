@@ -6062,6 +6062,8 @@ public:
   SILLayout *getLayout() const { return Layout; }
   SubstitutionMap getSubstitutions() const { return Substitutions; }
 
+  CanType getLoweredFieldType() const;
+
   // TODO: SILBoxTypes should be explicitly constructed in terms of specific
   // layouts. As a staging mechanism, we expose the old single-boxed-type
   // interface.

@@ -4611,6 +4611,12 @@ SILBoxType::SILBoxType(ASTContext &C,
   assert(Substitutions.isCanonical());
 }
 
+CanType SILBoxType::getLoweredFieldType() const {
+  auto fields = getLayout()->getFields();
+  assert(fields.size() == 1);
+  return fields[0].getLoweredType();
+}
+
 AnyFunctionType *AnyFunctionType::getWithoutDifferentiability() const {
   SmallVector<Param, 8> newParams;
   for (auto &param : getParams()) {
