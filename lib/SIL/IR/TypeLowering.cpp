@@ -3173,6 +3173,11 @@ void TypeConverter::verifyLowering(const TypeLowering &lowering,
   if (TypeLoweringDisableVerification) {
     return;
   }
+  //!!!
+  loweredType->isNoncopyable();
+  loweredType->isEscapable();
+  
+  
   verifyLexicalLowering(lowering, origType, loweredType,
                         forExpansion);
   verifyTrivialLowering(lowering, origType, loweredType, forExpansion);

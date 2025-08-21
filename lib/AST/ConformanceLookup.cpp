@@ -562,6 +562,18 @@ LookupConformanceInModuleRequest::evaluate(
   if (auto packElement = type->getAs<PackElementType>())
     type = packElement->getPackType();
 
+  auto checkIsInvertibleProtocol = [protocol]{
+    if (auto kp = protocol->getKnownProtocolKind()) {
+      return getInvertibleProtocolKind(*kp).has_value();
+    }
+    return false;
+  };
+  // A SIL box type is Copyable or Escapable iff underlying field is.
+  if (auto boxType = type->getAs<SILBoxType>()) {
+    if (checkIsInvertibleProtocol()) {
+      type = boxType->getLoweredFieldType();
+    }
+  }
   // An archetype conforms to a protocol if the protocol is listed in the
   // archetype's list of conformances, or if the archetype has a superclass
   // constraint and the superclass conforms to the protocol.
@@ -619,6 +631,7 @@ LookupConformanceInModuleRequest::evaluate(
   if (auto packType = type->getAs<PackType>()) {
     return getPackTypeConformance(packType, protocol);
   }
+  //!!! Handle SILPackType
 
   // Tuple types can conform to protocols.
   if (auto tupleType = type->getAs<TupleType>()) {
@@ -646,17 +659,8 @@ LookupConformanceInModuleRequest::evaluate(
   }
 
 #ifndef NDEBUG
-  // Ensure we haven't missed queries for the specialty SIL types
-  // in the AST in conformance to one of the invertible protocols.
-  if (auto kp = protocol->getKnownProtocolKind()) {
-    if (getInvertibleProtocolKind(*kp)) {
-      assert(!(type->is<SILFunctionType,
-                        SILBoxType,
-                        SILMoveOnlyWrappedType,
-                        SILPackType,
-                        SILTokenType>()));
-      assert(!type->is<ReferenceStorageType>());
-    }
+  if (checkIsInvertibleProtocol()) {
+    assert(!(type->is<ReferenceStorageType, SILMoveOnlyWrappedType>()));
   }
 #endif
 
@@ -898,12 +902,11 @@ bool TypeBase::isSendableType() {
 ///
 
 static bool conformsToInvertible(CanType type, InvertibleProtocolKind ip) {
-  // FIXME: Remove these.
-  if (isa<SILPackType>(type))
+  /*!!!
+  // TODO: Support non-Escapable in parameter packs.
+  if (isa<SILPackType, SILBoxType, SILTokenType>(type))
     return true;
-
-  if (isa<SILTokenType>(type))
-    return true;
+  */
 
   auto *proto = type->getASTContext().getProtocol(getKnownProtocolKind(ip));
   ASSERT(proto);
@@ -930,7 +933,6 @@ void TypeBase::computeInvertibleConformances() {
 
   assert(!canType->hasTypeParameter());
   assert(!canType->hasUnboundGenericType());
-  assert(!isa<SILBoxType>(canType));
   assert(!isa<SILMoveOnlyWrappedType>(canType));
 
   Bits.TypeBase.IsCopyable = conformsToInvertible(
@@ -940,6 +942,8 @@ void TypeBase::computeInvertibleConformances() {
 }
 
 /// \returns true iff this type lacks conformance to Copyable.
+///
+/// MoveOnlyWrapped types do conform to Copyable
 bool TypeBase::isNoncopyable() {
   if (!Bits.TypeBase.ComputedInvertibleConformances)
     computeInvertibleConformances();

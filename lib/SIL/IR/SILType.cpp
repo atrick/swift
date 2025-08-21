@@ -616,6 +616,9 @@ CanType SILType::mapTypeOutOfContext(CanType type) {
   return type->mapTypeOutOfContext()->getCanonicalType();
 }
 
+// TODO: TypeLowering should ensure that all box fields are recursively lowered
+// in the box's expansion context. Then there would be no need to pass in the
+// expansion context here or re-lower the field's type.
 CanType swift::getSILBoxFieldLoweredType(TypeExpansionContext context,
                                          SILBoxType *type, TypeConverter &TC,
                                          unsigned index) {
@@ -1073,7 +1076,6 @@ bool SILType::isEscapable(const SILFunction &function) const {
   //
   // Treat all other SIL-specific types as Escapable.
   if (isa<SILBlockStorageType,
-          SILBoxType,
           SILPackType,
           SILTokenType>(ty)) {
     return true;
