@@ -205,7 +205,7 @@
 ///       // Accessing 'numberPointer' is undefined behavior.
 @frozen // unsafe-performance
 @unsafe
-public struct UnsafePointer<Pointee: ~Copyable>: Copyable {
+public struct UnsafePointer<Pointee: ~Copyable & ~Escapable>: Copyable & ~Escapable {
 
   /// The underlying raw (untyped) pointer.
   @_preInverseGenerics
@@ -220,20 +220,22 @@ public struct UnsafePointer<Pointee: ~Copyable>: Copyable {
   }
 }
 
+extension UnsafePointer: Escapable where Pointee: ~Copyable & Escapable {}
+
 @available(*, unavailable)
 extension UnsafePointer: Sendable where Pointee: ~Copyable {}
 
 @_preInverseGenerics
-extension UnsafePointer: _Pointer where Pointee: ~Copyable {
+extension UnsafePointer: _Pointer where Pointee: ~Copyable & ~Escapable {
   /// A type that represents the distance between two pointers.
   public typealias Distance = Int
 }
 
 @_preInverseGenerics
-extension UnsafePointer: Equatable where Pointee: ~Copyable {}
+extension UnsafePointer: Equatable where Pointee: ~Copyable & ~Escapable {}
 
 @_preInverseGenerics
-extension UnsafePointer: Hashable where Pointee: ~Copyable {
+extension UnsafePointer: Hashable where Pointee: ~Copyable & ~Escapable {
   // Note: This explicit `hashValue` applies @_preInverseGenerics to emulate the
   // original (pre-6.0) compiler-synthesized version.
   @_preInverseGenerics
@@ -243,23 +245,23 @@ extension UnsafePointer: Hashable where Pointee: ~Copyable {
   }
 }
 @_preInverseGenerics
-extension UnsafePointer: Comparable where Pointee: ~Copyable {}
+extension UnsafePointer: Comparable where Pointee: ~Copyable & ~Escapable {}
 
 @_preInverseGenerics
-extension UnsafePointer: Strideable where Pointee: ~Copyable {}
+extension UnsafePointer: Strideable where Pointee: ~Copyable & ~Escapable {}
 
 #if !$Embedded
 @_preInverseGenerics
 extension UnsafePointer: CustomDebugStringConvertible
-where Pointee: ~Copyable {}
+where Pointee: ~Copyable & ~Escapable {}
 #endif
 
 #if SWIFT_ENABLE_REFLECTION
 @_preInverseGenerics
-extension UnsafePointer: CustomReflectable where Pointee: ~Copyable {}
+extension UnsafePointer: CustomReflectable where Pointee: ~Copyable & ~Escapable {}
 #endif
 
-extension UnsafePointer where Pointee: ~Copyable {
+extension UnsafePointer where Pointee: ~Copyable & ~Escapable {
   /// Deallocates the memory block previously allocated at this pointer.
   ///
   /// This pointer must be a pointer to the start of a previously allocated
@@ -276,7 +278,7 @@ extension UnsafePointer where Pointee: ~Copyable {
   }
 }
 
-extension UnsafePointer where Pointee: ~Copyable {
+extension UnsafePointer where Pointee: ~Copyable & ~Escapable {
   /// Accesses the instance referenced by this pointer.
   ///
   /// When reading from the `pointee` property, the instance referenced by
@@ -302,7 +304,7 @@ extension UnsafePointer {
   }
 }
 
-extension UnsafePointer where Pointee: ~Copyable {
+extension UnsafePointer where Pointee: ~Copyable & ~Escapable {
   /// Accesses the pointee at the specified offset from this pointer.
   ///
   /// For a pointer `p`, the memory at `p + i` must be initialized.
@@ -332,7 +334,7 @@ extension UnsafePointer {
   }
 }
 
-extension UnsafePointer where Pointee: ~Copyable {
+extension UnsafePointer where Pointee: ~Copyable & ~Escapable {
   /// Executes the given closure while temporarily binding memory to
   /// the specified number of instances of type `T`.
   ///
@@ -459,7 +461,7 @@ extension UnsafePointer {
   }
 }
 
-extension UnsafePointer where Pointee: ~Copyable {
+extension UnsafePointer where Pointee: ~Copyable & ~Escapable {
   @inlinable // unsafe-performance
   @_preInverseGenerics
   internal static var _max: UnsafePointer {
@@ -469,7 +471,7 @@ extension UnsafePointer where Pointee: ~Copyable {
   }
 }
 
-extension UnsafePointer where Pointee: ~Copyable {
+extension UnsafePointer where Pointee: ~Copyable & ~Escapable {
   @safe
   @_alwaysEmitIntoClient
   public func _isWellAligned() -> Bool {
@@ -664,7 +666,7 @@ extension UnsafePointer where Pointee: ~Copyable {
 ///       // Accessing 'numberPointer' is undefined behavior.
 @frozen // unsafe-performance
 @unsafe
-public struct UnsafeMutablePointer<Pointee: ~Copyable>: Copyable {
+public struct UnsafeMutablePointer<Pointee: ~Copyable & ~Escapable>: Copyable & ~Escapable {
   /// The underlying raw (untyped) pointer.
   @_preInverseGenerics
   @safe
@@ -678,20 +680,22 @@ public struct UnsafeMutablePointer<Pointee: ~Copyable>: Copyable {
   }
 }
 
+extension UnsafeMutablePointer: Escapable where Pointee: ~Copyable & Escapable {}
+
 @available(*, unavailable)
 extension UnsafeMutablePointer: Sendable where Pointee: ~Copyable {}
 
 @_preInverseGenerics
-extension UnsafeMutablePointer: _Pointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer: _Pointer where Pointee: ~Copyable & ~Escapable {
   /// A type that represents the distance between two pointers.
   public typealias Distance = Int
 }
 
 @_preInverseGenerics
-extension UnsafeMutablePointer: Equatable where Pointee: ~Copyable {}
+extension UnsafeMutablePointer: Equatable where Pointee: ~Copyable & ~Escapable {}
 
 @_preInverseGenerics
-extension UnsafeMutablePointer: Hashable where Pointee: ~Copyable {
+extension UnsafeMutablePointer: Hashable where Pointee: ~Copyable & ~Escapable {
   // Note: This explicit `hashValue` applies @_preInverseGenerics to emulate the
   // original (pre-6.0) compiler-synthesized version.
   @_preInverseGenerics
@@ -702,29 +706,30 @@ extension UnsafeMutablePointer: Hashable where Pointee: ~Copyable {
 }
 
 @_preInverseGenerics
-extension UnsafeMutablePointer: Comparable where Pointee: ~Copyable {}
+extension UnsafeMutablePointer: Comparable where Pointee: ~Copyable & ~Escapable {}
 
 @_preInverseGenerics
-extension UnsafeMutablePointer: Strideable where Pointee: ~Copyable {}
+extension UnsafeMutablePointer: Strideable where Pointee: ~Copyable & ~Escapable {}
 
 #if !$Embedded
 @_preInverseGenerics
 extension UnsafeMutablePointer: CustomDebugStringConvertible
-where Pointee: ~Copyable {}
+where Pointee: ~Copyable & ~Escapable {}
 #endif
 
 #if SWIFT_ENABLE_REFLECTION
 @_preInverseGenerics
-extension UnsafeMutablePointer: CustomReflectable where Pointee: ~Copyable {}
+extension UnsafeMutablePointer: CustomReflectable where Pointee: ~Copyable & ~Escapable {}
 #endif
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Creates a mutable typed pointer referencing the same memory as the given
   /// immutable pointer.
   ///
   /// - Parameter other: The immutable pointer to convert.
   @_transparent
   @_preInverseGenerics
+  @lifetime(copy other)
   public init(@_nonEphemeral mutating other: UnsafePointer<Pointee>) {
     self._rawValue = other._rawValue
   }
@@ -736,6 +741,7 @@ extension UnsafeMutablePointer where Pointee: ~Copyable {
   ///   the result is `nil`.
   @_transparent
   @_preInverseGenerics
+  @lifetime(copy other)
   public init?(@_nonEphemeral mutating other: UnsafePointer<Pointee>?) {
     guard let unwrapped = unsafe other else { return nil }
     unsafe self.init(mutating: unwrapped)
@@ -748,6 +754,7 @@ extension UnsafeMutablePointer where Pointee: ~Copyable {
   @_transparent
   @_preInverseGenerics
   @safe
+  @lifetime(copy other)
   public init(@_nonEphemeral _ other: UnsafeMutablePointer<Pointee>) {
    self._rawValue = other._rawValue
   }
@@ -760,13 +767,14 @@ extension UnsafeMutablePointer where Pointee: ~Copyable {
   @_transparent
   @_preInverseGenerics
   @safe
+  @lifetime(copy other)
   public init?(@_nonEphemeral _ other: UnsafeMutablePointer<Pointee>?) {
    guard let unwrapped = unsafe other else { return nil }
    self.init(unwrapped)
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Allocates uninitialized memory for the specified number of instances of
   /// type `Pointee`.
   ///
@@ -793,6 +801,7 @@ extension UnsafeMutablePointer where Pointee: ~Copyable {
   @inlinable
   @_preInverseGenerics
   @safe
+  @lifetime(immortal)
   public static func allocate(
     capacity count: Int
   ) -> UnsafeMutablePointer<Pointee> {
@@ -818,7 +827,7 @@ extension UnsafeMutablePointer where Pointee: ~Copyable {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Deallocates the memory block previously allocated at this pointer.
   ///
   /// This pointer must be a pointer to the start of a previously allocated
@@ -835,7 +844,7 @@ extension UnsafeMutablePointer where Pointee: ~Copyable {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Reads or updates the instance referenced by this pointer.
   ///
   /// When reading from the `pointee` property, the instance referenced by this
@@ -899,7 +908,7 @@ extension UnsafeMutablePointer {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Initializes this pointer's memory with a single instance of the given
   /// value.
   ///
@@ -924,7 +933,7 @@ extension UnsafeMutablePointer {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Retrieves and returns the referenced instance, returning the pointer's
   /// memory to an uninitialized state.
   ///
@@ -943,6 +952,7 @@ extension UnsafeMutablePointer where Pointee: ~Copyable {
   /// - Returns: The instance referenced by this pointer.
   @inlinable
   @_preInverseGenerics
+  @lifetime(borrow self)
   public func move() -> Pointee {
     return Builtin.take(_rawValue)
   }
@@ -1031,7 +1041,7 @@ extension UnsafeMutablePointer {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Moves instances from initialized source memory into the uninitialized
   /// memory referenced by this pointer, leaving the source memory
   /// uninitialized and the memory referenced by this pointer initialized.
@@ -1114,7 +1124,7 @@ extension UnsafeMutablePointer {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Update this pointer's initialized memory by moving the specified number
   /// of instances the source pointer's memory, leaving the source memory
   /// uninitialized.
@@ -1164,7 +1174,7 @@ extension UnsafeMutablePointer {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Deinitializes the specified number of values starting at this pointer.
   ///
   /// The region of memory starting at this pointer and covering `count`
@@ -1188,7 +1198,7 @@ extension UnsafeMutablePointer where Pointee: ~Copyable {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Executes the given closure while temporarily binding memory to
   /// the specified number of instances of the given type.
   ///
@@ -1289,7 +1299,7 @@ extension UnsafeMutablePointer {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   /// Reads or updates the pointee at the specified offset from this pointer.
   ///
   /// For a pointer `p`, the memory at `p + i` must be initialized when reading
@@ -1380,7 +1390,7 @@ extension UnsafeMutablePointer {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   @inlinable // unsafe-performance
   @_preInverseGenerics
   internal static var _max: UnsafeMutablePointer {
@@ -1390,7 +1400,7 @@ extension UnsafeMutablePointer where Pointee: ~Copyable {
   }
 }
 
-extension UnsafeMutablePointer where Pointee: ~Copyable {
+extension UnsafeMutablePointer where Pointee: ~Copyable & ~Escapable {
   @safe
   @_alwaysEmitIntoClient
   public func _isWellAligned() -> Bool {

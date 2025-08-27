@@ -101,7 +101,7 @@
 ///         print("New tap detected at (\(nextTap.x), \(nextTap.y)).")
 ///     }
 ///     // Prints "New tap detected at (0, 1).")
-public protocol Hashable: Equatable {
+public protocol Hashable: Equatable & ~Escapable {
   /// The hash value.
   ///
   /// Hash values are not guaranteed to be equal across different executions of
