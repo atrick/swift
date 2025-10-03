@@ -561,7 +561,7 @@ extension UnsafeRawPointer {
   /// - Returns: a pointer properly aligned to store a value of type `T`.
   @inlinable
   @_alwaysEmitIntoClient
-  public func alignedUp<T: ~Copyable>(for type: T.Type) -> Self {
+  public func alignedUp<T: ~Copyable & ~Escapable>(for type: T.Type) -> Self {
     let mask = UInt(Builtin.alignof(T.self)) &- 1
     let bits = (UInt(Builtin.ptrtoint_Word(_rawValue)) &+ mask) & ~mask
     _debugPrecondition(bits != 0, "Overflow in pointer arithmetic")
@@ -579,7 +579,7 @@ extension UnsafeRawPointer {
   /// - Returns: a pointer properly aligned to store a value of type `T`.
   @inlinable
   @_alwaysEmitIntoClient
-  public func alignedDown<T: ~Copyable>(for type: T.Type) -> Self {
+  public func alignedDown<T: ~Copyable & ~Escapable>(for type: T.Type) -> Self {
     let mask = UInt(Builtin.alignof(T.self)) &- 1
     let bits = UInt(Builtin.ptrtoint_Word(_rawValue)) & ~mask
     _debugPrecondition(bits != 0, "Overflow in pointer arithmetic")
@@ -1565,7 +1565,7 @@ extension UnsafeMutableRawPointer {
   /// - Returns: a pointer properly aligned to store a value of type `T`.
   @inlinable
   @_alwaysEmitIntoClient
-  public func alignedUp<T: ~Copyable>(for type: T.Type) -> Self {
+  public func alignedUp<T: ~Copyable & ~Escapable>(for type: T.Type) -> Self {
     let mask = UInt(Builtin.alignof(T.self)) &- 1
     let bits = (UInt(Builtin.ptrtoint_Word(_rawValue)) &+ mask) & ~mask
     _debugPrecondition(bits != 0, "Overflow in pointer arithmetic")
@@ -1583,7 +1583,7 @@ extension UnsafeMutableRawPointer {
   /// - Returns: a pointer properly aligned to store a value of type `T`.
   @inlinable
   @_alwaysEmitIntoClient
-  public func alignedDown<T: ~Copyable>(for type: T.Type) -> Self {
+  public func alignedDown<T: ~Copyable & ~Escapable>(for type: T.Type) -> Self {
     let mask = UInt(Builtin.alignof(T.self)) &- 1
     let bits = UInt(Builtin.ptrtoint_Word(_rawValue)) & ~mask
     _debugPrecondition(bits != 0, "Overflow in pointer arithmetic")
