@@ -521,7 +521,8 @@ extension UnsafeRawPointer {
   ///   with the value in the range of memory referenced by this pointer.
   @inlinable
   @_alwaysEmitIntoClient
-  public func loadUnaligned<T>(
+  @lifetime(borrow self)
+  public func loadUnaligned<T: ~Escapable>(
     fromByteOffset offset: Int = 0,
     as type: T.Type
   ) -> T {
