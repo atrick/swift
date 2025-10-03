@@ -26,7 +26,7 @@ import SwiftShims
 /// - Returns: Whether or not there is sufficient space on the stack to allocate
 ///   `byteCount` bytes of memory.
 @_alwaysEmitIntoClient @_transparent
-internal func _byteCountForTemporaryAllocation<T: ~Copyable>(
+internal func _byteCountForTemporaryAllocation<T: ~Copyable & ~Escapable>(
   of type: T.Type,
   capacity: Int
 ) -> Int {
@@ -123,7 +123,7 @@ internal func _isStackAllocationSafe(byteCount: Int, alignment: Int) -> Bool {
 /// `withUnsafeTemporaryAllocation()`.
 @_alwaysEmitIntoClient @_transparent
 internal func _withUnsafeTemporaryAllocation<
-  T: ~Copyable, R: ~Copyable
+  T: ~Copyable & ~Escapable, R: ~Copyable
 >(
   of type: T.Type,
   capacity: Int,
@@ -162,7 +162,7 @@ internal func _withUnsafeTemporaryAllocation<
 
 @_alwaysEmitIntoClient @_transparent
 internal func _withUnprotectedUnsafeTemporaryAllocation<
-  T: ~Copyable, R: ~Copyable
+  T: ~Copyable & ~Escapable, R: ~Copyable
 >(
   of type: T.Type,
   capacity: Int,
@@ -332,7 +332,7 @@ public func _withUnprotectedUnsafeTemporaryAllocation<R: ~Copyable, E: Error>(
 /// cannot be used afterward.
 @_alwaysEmitIntoClient @_transparent
 public func withUnsafeTemporaryAllocation<
-  T: ~Copyable,R: ~Copyable,
+  T: ~Copyable & ~Escapable, R: ~Copyable,
   E: Error
 >(
   of type: T.Type,
@@ -366,7 +366,7 @@ public func withUnsafeTemporaryAllocation<
 /// doesn't trigger stack protection for the stack allocated memory.
 @_alwaysEmitIntoClient @_transparent
 public func _withUnprotectedUnsafeTemporaryAllocation<
-  T: ~Copyable, R: ~Copyable,
+  T: ~Copyable & ~Escapable, R: ~Copyable,
   E: Error
 >(
   of type: T.Type,
