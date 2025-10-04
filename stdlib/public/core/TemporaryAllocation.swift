@@ -122,8 +122,9 @@ internal func _isStackAllocationSafe(byteCount: Int, alignment: Int) -> Bool {
 /// This function encapsulates the various calls to builtins required by
 /// `withUnsafeTemporaryAllocation()`.
 @_alwaysEmitIntoClient @_transparent
+@lifetime(borrow body)
 internal func _withUnsafeTemporaryAllocation<
-  T: ~Copyable & ~Escapable, R: ~Copyable
+  T: ~Copyable & ~Escapable, R: ~Copyable & ~Escapable
 >(
   of type: T.Type,
   capacity: Int,
@@ -161,8 +162,9 @@ internal func _withUnsafeTemporaryAllocation<
 }
 
 @_alwaysEmitIntoClient @_transparent
+@lifetime(borrow body)
 internal func _withUnprotectedUnsafeTemporaryAllocation<
-  T: ~Copyable & ~Escapable, R: ~Copyable
+  T: ~Copyable & ~Escapable, R: ~Copyable & ~Escapable
 >(
   of type: T.Type,
   capacity: Int,
@@ -196,7 +198,8 @@ internal func _withUnprotectedUnsafeTemporaryAllocation<
 }
 
 @_alwaysEmitIntoClient @_transparent
-internal func _fallBackToHeapAllocation<R: ~Copyable, E: Error>(
+@lifetime(borrow body)
+internal func _fallBackToHeapAllocation<R: ~Copyable & ~Escapable, E: Error>(
   byteCount: Int,
   alignment: Int,
   _ body: (Builtin.RawPointer) throws(E) -> R
@@ -245,7 +248,8 @@ internal func _fallBackToHeapAllocation<R: ~Copyable, E: Error>(
 /// the buffer) must not escape. It will be deallocated when `body` returns and
 /// cannot be used afterward.
 @_alwaysEmitIntoClient @_transparent
-public func withUnsafeTemporaryAllocation<R: ~Copyable, E: Error>(
+@lifetime(borrow body)
+public func withUnsafeTemporaryAllocation<R: ~Copyable & ~Escapable, E: Error>(
   byteCount: Int,
   alignment: Int,
   _ body: (UnsafeMutableRawBufferPointer) throws(E) -> R
@@ -275,7 +279,8 @@ public func withUnsafeTemporaryAllocation<R: ~Copyable, E: Error>(
 /// This function is similar to `withUnsafeTemporaryAllocation`, except that it
 /// doesn't trigger stack protection for the stack allocated memory.
 @_alwaysEmitIntoClient @_transparent
-public func _withUnprotectedUnsafeTemporaryAllocation<R: ~Copyable, E: Error>(
+@lifetime(borrow body)
+public func _withUnprotectedUnsafeTemporaryAllocation<R: ~Copyable & ~Escapable, E: Error>(
   byteCount: Int,
   alignment: Int,
   _ body: (UnsafeMutableRawBufferPointer) throws(E) -> R
@@ -331,8 +336,9 @@ public func _withUnprotectedUnsafeTemporaryAllocation<R: ~Copyable, E: Error>(
 /// the buffer) must not escape. It will be deallocated when `body` returns and
 /// cannot be used afterward.
 @_alwaysEmitIntoClient @_transparent
+@lifetime(borrow body)
 public func withUnsafeTemporaryAllocation<
-  T: ~Copyable & ~Escapable, R: ~Copyable,
+  T: ~Copyable & ~Escapable, R: ~Copyable & ~Escapable,
   E: Error
 >(
   of type: T.Type,
@@ -365,8 +371,9 @@ public func withUnsafeTemporaryAllocation<
 /// This function is similar to `withUnsafeTemporaryAllocation`, except that it
 /// doesn't trigger stack protection for the stack allocated memory.
 @_alwaysEmitIntoClient @_transparent
+@lifetime(borrow body)
 public func _withUnprotectedUnsafeTemporaryAllocation<
-  T: ~Copyable & ~Escapable, R: ~Copyable,
+  T: ~Copyable & ~Escapable, R: ~Copyable & ~Escapable,
   E: Error
 >(
   of type: T.Type,
