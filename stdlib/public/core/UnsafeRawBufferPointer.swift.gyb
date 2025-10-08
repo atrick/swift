@@ -654,7 +654,7 @@ extension Unsafe${Mutable}RawBufferPointer {
   @inlinable @_transparent
   @_preInverseGenerics
   @safe
-  public init<T: ~Copyable>(_ buffer: UnsafeMutableBufferPointer<T>) {
+  public init<T: ~Copyable & ~Escapable>(_ buffer: UnsafeMutableBufferPointer<T>) {
     unsafe self.init(start: buffer.baseAddress,
       count: buffer.count * MemoryLayout<T>.stride)
   }
@@ -667,7 +667,7 @@ extension Unsafe${Mutable}RawBufferPointer {
   @inlinable @_transparent
   @_preInverseGenerics
   @safe
-  public init<T: ~Copyable>(_ buffer: UnsafeBufferPointer<T>) {
+  public init<T: ~Copyable & ~Escapable>(_ buffer: UnsafeBufferPointer<T>) {
     unsafe self.init(start: buffer.baseAddress,
       count: buffer.count * MemoryLayout<T>.stride)
   }
@@ -969,7 +969,7 @@ extension Unsafe${Mutable}RawBufferPointer {
   ///     base address as this buffer, and its count is equal to `source.count`.
   @discardableResult
   @_alwaysEmitIntoClient
-  public func moveInitializeMemory<T: ~Copyable>(
+  public func moveInitializeMemory<T: ~Copyable & ~Escapable>(
     as type: T.Type,
     fromContentsOf source: UnsafeMutableBufferPointer<T>
   ) -> UnsafeMutableBufferPointer<T> {
@@ -1053,7 +1053,7 @@ extension Unsafe${Mutable}RawBufferPointer {
   @_transparent
   @_preInverseGenerics
   @discardableResult
-  public func bindMemory<T: ~Copyable>(
+  public func bindMemory<T: ~Copyable & ~Escapable>(
     to type: T.Type
   ) -> Unsafe${Mutable}BufferPointer<T> {
     guard let base = unsafe _position else {
@@ -1111,7 +1111,7 @@ extension Unsafe${Mutable}RawBufferPointer {
   ///   - buffer: The buffer temporarily bound to instances of `T`.
   /// - Returns: The return value, if any, of the `body` closure parameter.
   @_alwaysEmitIntoClient @_transparent
-  public func withMemoryRebound<T: ~Copyable, E: Error, Result: ~Copyable>(
+  public func withMemoryRebound<T: ~Copyable & ~Escapable, E: Error, Result: ~Copyable>(
     to type: T.Type,
     _ body: (_ buffer: Unsafe${Mutable}BufferPointer<T>) throws(E) -> Result
   ) throws(E) -> Result {
@@ -1148,7 +1148,7 @@ extension Unsafe${Mutable}RawBufferPointer {
   /// - Parameter to: The type `T` that the memory has already been bound to.
   /// - Returns: A typed pointer to the same memory as this raw pointer.
   @_alwaysEmitIntoClient @_transparent
-  public func assumingMemoryBound<T: ~Copyable>(
+  public func assumingMemoryBound<T: ~Copyable & ~Escapable>(
     to: T.Type
   ) -> Unsafe${Mutable}BufferPointer<T> {
     guard let s = unsafe _position else {
@@ -1270,7 +1270,7 @@ extension ${Self} {
 ///     of the closure's execution.
 /// - Returns: The return value, if any, of the `body` closure.
 @_alwaysEmitIntoClient
-public func withUnsafeMutableBytes<T: ~Copyable, E: Error, Result: ~Copyable>(
+public func withUnsafeMutableBytes<T: ~Copyable & ~Escapable, E: Error, Result: ~Copyable>(
   of value: inout T,
   _ body: (UnsafeMutableRawBufferPointer) throws(E) -> Result
 ) throws(E) -> Result {
@@ -1302,7 +1302,7 @@ func __abi_se0413_withUnsafeMutableBytes<T, Result>(
 /// doesn't trigger stack protection for the pointer.
 @_alwaysEmitIntoClient
 public func _withUnprotectedUnsafeMutableBytes<
-  T: ~Copyable, E: Error, Result: ~Copyable
+  T: ~Copyable & ~Escapable, E: Error, Result: ~Copyable
 >(
   of value: inout T,
   _ body: (UnsafeMutableRawBufferPointer) throws(E) -> Result
@@ -1339,7 +1339,7 @@ public func _withUnprotectedUnsafeMutableBytes<
 ///     `withUnsafeMutableBytes(of:_:)` instead.
 /// - Returns: The return value, if any, of the `body` closure.
 @_alwaysEmitIntoClient
-public func withUnsafeBytes<T: ~Copyable, E: Error, Result: ~Copyable>(
+public func withUnsafeBytes<T: ~Copyable & ~Escapable, E: Error, Result: ~Copyable>(
   of value: inout T,
   _ body: (UnsafeRawBufferPointer) throws(E) -> Result
 ) throws(E) -> Result {
@@ -1370,7 +1370,7 @@ func __abi_se0413_withUnsafeBytes<T, Result>(
 /// doesn't trigger stack protection for the pointer.
 @_alwaysEmitIntoClient
 public func _withUnprotectedUnsafeBytes<
-  T: ~Copyable, E: Error, Result: ~Copyable
+  T: ~Copyable & ~Escapable, E: Error, Result: ~Copyable
 >(
   of value: inout T,
   _ body: (UnsafeRawBufferPointer) throws(E) -> Result
@@ -1404,7 +1404,7 @@ public func _withUnprotectedUnsafeBytes<
 /// - Returns: The return value, if any, of the `body` closure.
 @_alwaysEmitIntoClient
 public func withUnsafeBytes<
-  T: ~Copyable, E: Error, Result: ~Copyable
+  T: ~Copyable & ~Escapable, E: Error, Result: ~Copyable
 >(
   of value: borrowing T,
   _ body: (UnsafeRawBufferPointer) throws(E) -> Result
@@ -1436,7 +1436,7 @@ func __abi_se0413_withUnsafeBytes<T, Result>(
 /// doesn't trigger stack protection for the pointer.
 @_alwaysEmitIntoClient
 public func _withUnprotectedUnsafeBytes<
-  T: ~Copyable, E: Error, Result: ~Copyable
+  T: ~Copyable & ~Escapable, E: Error, Result: ~Copyable
 >(
   of value: borrowing T,
   _ body: (UnsafeRawBufferPointer) throws(E) -> Result
