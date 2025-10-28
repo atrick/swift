@@ -446,9 +446,11 @@ void ExistentialTransform::populateThunkBody() {
             Loc, OrigOperand, OpenedSILType.getAddressType(), it->second.AccessType);
         SILValue calleeArg = archetypeValue;
         if (OriginallyConsumed) {
-          // open_existential_addr projects a borrowed address into the
-          // existential box. Since the callee consumes the generic value, we
-          // must pass in a copy.
+          assert(it->second.AccessType == OpenedExistentialAccess::Mutable);
+          // open_existential_addr mutable_access projects an owned address into
+          // the existential box. Since the callee consumes the generic value
+          // without consuming the box, we pass in an owned copy and destroy the
+          // box after the call.
           auto *ASI =
             Builder.createAllocStack(Loc, OpenedSILType);
           Builder.createCopyAddr(Loc, archetypeValue, ASI, IsNotTake,
