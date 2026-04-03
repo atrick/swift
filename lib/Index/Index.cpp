@@ -73,7 +73,9 @@ printArtificialName(const swift::AbstractStorageDecl *ASD, AccessorKind AK, llvm
     OS << "mutate:" << ASD->getName();
     return false;
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Read:
   case AccessorKind::YieldingBorrow:
   case AccessorKind::Modify:

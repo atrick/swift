@@ -392,8 +392,14 @@ void SILDeclRef::print(raw_ostream &OS) const {
     case AccessorKind::Address:
       OS << "!addressor";
       break;
+    case AccessorKind::RawAddress:
+      OS << "!rawAddressor";
+      break;
     case AccessorKind::MutableAddress:
       OS << "!mutableAddressor";
+      break;
+    case AccessorKind::MutableRawAddress:
+      OS << "!mutableRawAddressor";
       break;
     case AccessorKind::Read:
       OS << "!read";

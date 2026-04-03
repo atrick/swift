@@ -157,11 +157,13 @@ void ClangImporter::Implementation::makeComputed(AbstractStorageDecl *storage,
   assert(getter);
   // The synthesized computed property can either use a `get` or an
   // `unsafeAddress` accessor.
-  auto isAddress = getter->getAccessorKind() == AccessorKind::Address;
+  auto isAddress = getter->getAccessorKind() == AccessorKind::Address ||
+                   getter->getAccessorKind() == AccessorKind::RawAddress;
   storage->getASTContext().evaluator.cacheOutput(HasStorageRequest{storage}, false);
   if (setter) {
     if (isAddress)
-      assert(setter->getAccessorKind() == AccessorKind::MutableAddress);
+      assert(setter->getAccessorKind() == AccessorKind::MutableAddress ||
+             setter->getAccessorKind() == AccessorKind::MutableRawAddress);
     storage->setImplInfo(
         isAddress ? StorageImplInfo(ReadImplKind::Address,
                                     WriteImplKind::MutableAddress,

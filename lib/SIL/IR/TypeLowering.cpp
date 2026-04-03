@@ -4741,6 +4741,7 @@ TypeConverter::getLoweredLocalCaptures(SILDeclRef fn) {
             break;
           case ReadImplKind::Address:
             collectAccessorCaptures(AccessorKind::Address);
+            collectAccessorCaptures(AccessorKind::RawAddress);
             break;
           case ReadImplKind::Get:
             collectAccessorCaptures(AccessorKind::Get);
@@ -4770,6 +4771,7 @@ TypeConverter::getLoweredLocalCaptures(SILDeclRef fn) {
             break;
           case WriteImplKind::MutableAddress:
             collectAccessorCaptures(AccessorKind::MutableAddress);
+            collectAccessorCaptures(AccessorKind::MutableRawAddress);
             break;
           case WriteImplKind::Modify:
             collectAccessorCaptures(AccessorKind::Modify);
@@ -4792,6 +4794,7 @@ TypeConverter::getLoweredLocalCaptures(SILDeclRef fn) {
             break;
           case ReadWriteImplKind::MutableAddress:
             collectAccessorCaptures(AccessorKind::MutableAddress);
+            collectAccessorCaptures(AccessorKind::MutableRawAddress);
             break;
           case ReadWriteImplKind::Modify:
             collectAccessorCaptures(AccessorKind::Modify);

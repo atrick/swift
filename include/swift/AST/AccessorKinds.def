@@ -221,6 +221,12 @@ IMMUTABLE_ADDRESSOR(Address, unsafeAddress)
 /// of the type).
 MUTABLE_ADDRESSOR(MutableAddress, unsafeMutableAddress)
 
+/// Like unsafeAddress but provides a raw pointer.
+IMMUTABLE_ADDRESSOR(RawAddress, unsafeRawAddress)
+
+/// Like unsafeMutableAddress but provides a mutable raw pointer.
+MUTABLE_ADDRESSOR(MutableRawAddress, unsafeMutableRawAddress)
+
 /// This is an init accessor: a function that is called when DI
 /// re-writes assignment to initialization.
 INIT_ACCESSOR(Init, init)

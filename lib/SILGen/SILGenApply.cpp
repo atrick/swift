@@ -3366,7 +3366,9 @@ Expr *SILGenFunction::findStorageReferenceExprForMoveOnly(Expr *argExpr,
     // directly borrowing it.
     switch (strategy.getAccessor()) {
     case AccessorKind::Address:
+    case AccessorKind::RawAddress:
     case AccessorKind::MutableAddress:
+    case AccessorKind::MutableRawAddress:
     case AccessorKind::Read:
     case AccessorKind::YieldingBorrow:
     case AccessorKind::Modify:
@@ -3609,7 +3611,9 @@ SILGenFunction::tryEmitAddressableParameterAsAddress(ArgumentSource &&arg,
   case AccessStrategy::DispatchToAccessor: {
     // Non-addressor accessors don't produce stable addresses.
     if (strategy.getAccessor() != AccessorKind::Address
-        && strategy.getAccessor() != AccessorKind::MutableAddress) {
+        && strategy.getAccessor() != AccessorKind::RawAddress
+        && strategy.getAccessor() != AccessorKind::MutableAddress
+        && strategy.getAccessor() != AccessorKind::MutableRawAddress) {
       return notAddressable();
     }
     // TODO: Non-yielding borrow/mutate accessors can also be considered

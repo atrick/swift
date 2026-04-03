@@ -80,9 +80,11 @@ void swift::printDeclDescription(llvm::raw_ostream &out, const Decl *D,
           out << "didset";
           break;
         case AccessorKind::Address:
+        case AccessorKind::RawAddress:
           out << "addressor";
           break;
         case AccessorKind::MutableAddress:
+        case AccessorKind::MutableRawAddress:
           out << "mutableAddressor";
           break;
         case AccessorKind::Read:

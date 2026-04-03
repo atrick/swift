@@ -3624,9 +3624,11 @@ public:
         OS << "<didSet for ";
         break;
       case AccessorKind::Address:
+      case AccessorKind::RawAddress:
         OS << "<addressor for ";
         break;
       case AccessorKind::MutableAddress:
+      case AccessorKind::MutableRawAddress:
         OS << "<mutableAddressor for ";
         break;
       case AccessorKind::Read:

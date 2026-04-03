@@ -272,7 +272,10 @@ SymbolSubKind index::getSubKindForAccessor(AccessorKind AK) {
   case AccessorKind::WillSet:   return SymbolSubKind::SwiftAccessorWillSet;
   case AccessorKind::DidSet:    return SymbolSubKind::SwiftAccessorDidSet;
   case AccessorKind::Address: return SymbolSubKind::SwiftAccessorAddressor;
+  case AccessorKind::RawAddress: return SymbolSubKind::SwiftAccessorAddressor;
   case AccessorKind::MutableAddress:
+    return SymbolSubKind::SwiftAccessorMutableAddressor;
+  case AccessorKind::MutableRawAddress:
     return SymbolSubKind::SwiftAccessorMutableAddressor;
   case AccessorKind::Read:      return SymbolSubKind::SwiftAccessorRead;
   case AccessorKind::YieldingBorrow:     return SymbolSubKind::SwiftAccessorRead;

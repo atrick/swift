@@ -8797,7 +8797,9 @@ public:
   bool isAnyAddressor() const {
     auto kind = getAccessorKind();
     return kind == AccessorKind::Address
-        || kind == AccessorKind::MutableAddress;
+        || kind == AccessorKind::RawAddress
+        || kind == AccessorKind::MutableAddress
+        || kind == AccessorKind::MutableRawAddress;
   }
 
   /// isGetterOrSetter - Determine whether this is specifically a getter or
@@ -9983,6 +9985,8 @@ AbstractStorageDecl::overwriteSetterAccess(AccessLevel accessLevel) {
   if (auto modify = getAccessor(AccessorKind::Modify))
     modify->overwriteAccess(accessLevel);
   if (auto mutableAddressor = getAccessor(AccessorKind::MutableAddress))
+    mutableAddressor->overwriteAccess(accessLevel);
+  if (auto mutableAddressor = getAccessor(AccessorKind::MutableRawAddress))
     mutableAddressor->overwriteAccess(accessLevel);
 }
 

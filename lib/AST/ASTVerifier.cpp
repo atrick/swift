@@ -2688,6 +2688,13 @@ public:
           abort();
         }
       }
+      if (auto addressor = ASD->getAccessor(AccessorKind::RawAddress)) {
+        if (addressor->isMutating() != ASD->isGetterMutating()) {
+          Out << "AbstractStorageDecl::isGetterMutating is out of sync"
+                 " with whether immutable addressor is mutating";
+          abort();
+        }
+      }
       if (auto reader = ASD->getAccessor(AccessorKind::Read)) {
         if (reader->isMutating() != ASD->isGetterMutating()) {
           Out << "AbstractStorageDecl::isGetterMutating is out of sync"
@@ -2696,6 +2703,13 @@ public:
         }
       }
       if (auto addressor = ASD->getAccessor(AccessorKind::MutableAddress)) {
+        if (addressor->isMutating() != ASD->isSetterMutating()) {
+          Out << "AbstractStorageDecl::isSetterMutating is out of sync"
+                 " with whether mutable addressor is mutating";
+          abort();
+        }
+      }
+      if (auto addressor = ASD->getAccessor(AccessorKind::MutableRawAddress)) {
         if (addressor->isMutating() != ASD->isSetterMutating()) {
           Out << "AbstractStorageDecl::isSetterMutating is out of sync"
                  " with whether mutable addressor is mutating";

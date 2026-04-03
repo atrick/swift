@@ -6348,8 +6348,10 @@ static DescriptiveDeclKind getAccessorDescriptiveDeclKind(AccessorKind kind) {
   case AccessorKind::DidSet:
     return DescriptiveDeclKind::DidSet;
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
     return DescriptiveDeclKind::Addressor;
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
     return DescriptiveDeclKind::MutableAddressor;
   case AccessorKind::Init:
     return DescriptiveDeclKind::InitAccessor;

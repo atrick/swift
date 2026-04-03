@@ -2404,7 +2404,9 @@ computeOverriddenDecls(ValueDecl *decl, bool ignoreMissingImports) {
     case AccessorKind::DidSet:
     case AccessorKind::DistributedGet:
     case AccessorKind::Address:
+    case AccessorKind::RawAddress:
     case AccessorKind::MutableAddress:
+    case AccessorKind::MutableRawAddress:
     case AccessorKind::Init:
       // These accessors are never part of the opaque set. Bail out early
       // to avoid computing the overridden declarations of the storage.

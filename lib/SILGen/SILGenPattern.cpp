@@ -3372,7 +3372,9 @@ static bool isBorrowableSubject(SILGenFunction &SGF,
     case AccessorKind::Modify:
     case AccessorKind::YieldingMutate:
     case AccessorKind::Address:
+    case AccessorKind::RawAddress:
     case AccessorKind::MutableAddress:
+    case AccessorKind::MutableRawAddress:
       // Read, modify, and addressors yield a borrowable reference.
       return true;
     case AccessorKind::Init:

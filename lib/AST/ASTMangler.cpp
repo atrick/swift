@@ -137,9 +137,11 @@ static StringRef getCodeForAccessorKind(AccessorKind kind) {
   case AccessorKind::Modify:
     return "M";
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
     // 'l' is for location. 'A' was taken.
     return "lu";
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
     return "au";
   case AccessorKind::Init:
     return "i";

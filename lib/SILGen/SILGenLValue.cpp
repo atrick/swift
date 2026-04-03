@@ -2168,7 +2168,8 @@ namespace {
       // Validate the use of the access if it's noncopyable.
       if (addr.getType().isMoveOnly()) {
         MarkUnresolvedNonCopyableValueInst::CheckKind kind
-          = getAccessorDecl()->getAccessorKind() == AccessorKind::MutableAddress
+          = (getAccessorDecl()->getAccessorKind() == AccessorKind::MutableAddress
+            || getAccessorDecl()->getAccessorKind() == AccessorKind::MutableRawAddress)
               ? MarkUnresolvedNonCopyableValueInst::CheckKind::ConsumableAndAssignable
               : MarkUnresolvedNonCopyableValueInst::CheckKind::NoConsumeOrAssign;
         auto checkedAddr = SGF.B.createMarkUnresolvedNonCopyableValueInst(
@@ -3562,7 +3563,9 @@ namespace {
       }
 
       case AccessorKind::Address:
-      case AccessorKind::MutableAddress: {
+      case AccessorKind::RawAddress:
+      case AccessorKind::MutableAddress:
+      case AccessorKind::MutableRawAddress: {
         auto typeData =
             getPhysicalStorageTypeData(SGF.getTypeExpansionContext(), SGF.SGM,
                                        AccessKind, Storage, Subs,

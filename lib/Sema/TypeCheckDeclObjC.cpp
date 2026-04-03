@@ -768,7 +768,9 @@ bool swift::isRepresentableInLanguage(
       return true;
 
     case AccessorKind::Address:
+    case AccessorKind::RawAddress:
     case AccessorKind::MutableAddress:
+    case AccessorKind::MutableRawAddress:
       diagnoseAndRemoveAttr(accessor, Reason.getAttr(), diag::objc_addressor)
           .limitBehavior(behavior);
       Reason.describe(accessor);
@@ -1544,7 +1546,9 @@ shouldMarkAsObjC(const ValueDecl *VD, bool allowImplicit,
         return false;
 
       case AccessorKind::MutableAddress:
+      case AccessorKind::MutableRawAddress:
       case AccessorKind::Address:
+      case AccessorKind::RawAddress:
       case AccessorKind::Get:
       case AccessorKind::Set:
         break;

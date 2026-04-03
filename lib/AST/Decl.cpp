@@ -277,9 +277,11 @@ DescriptiveDeclKind Decl::getDescriptiveKind() const {
        return DescriptiveDeclKind::DidSet;
 
      case AccessorKind::Address:
+     case AccessorKind::RawAddress:
        return DescriptiveDeclKind::Addressor;
 
      case AccessorKind::MutableAddress:
+     case AccessorKind::MutableRawAddress:
        return DescriptiveDeclKind::MutableAddressor;
 
      case AccessorKind::Read:
@@ -7773,8 +7775,10 @@ StringRef swift::getAccessorNameForDiagnostic(AccessorKind accessorKind,
   case AccessorKind::Set:
     return article ? "a setter" : "setter";
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
     return article ? "an addressor" : "addressor";
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
     return article ? "a mutable addressor" : "mutable addressor";
   case AccessorKind::Read:
     return article ? "a '_read' accessor" : "'_read' accessor";
@@ -10118,7 +10122,9 @@ DeclName AbstractFunctionDecl::getEffectiveFullName() const {
     switch (accessor->getAccessorKind()) {
     // These don't have any extra implicit parameters.
     case AccessorKind::Address:
+    case AccessorKind::RawAddress:
     case AccessorKind::MutableAddress:
+    case AccessorKind::MutableRawAddress:
     case AccessorKind::Get:
     case AccessorKind::DistributedGet:
     case AccessorKind::Read:
@@ -11541,7 +11547,9 @@ StringRef AccessorDecl::implicitParameterNameFor(AccessorKind kind) {
   case AccessorKind::Modify:
   case AccessorKind::YieldingMutate:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Borrow:
   case AccessorKind::Mutate:
     return StringRef();
@@ -11553,6 +11561,7 @@ bool AccessorDecl::isAssumedNonMutating() const {
   case AccessorKind::Get:
   case AccessorKind::DistributedGet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::Read:
   case AccessorKind::YieldingBorrow:
   case AccessorKind::Borrow:
@@ -11562,6 +11571,7 @@ bool AccessorDecl::isAssumedNonMutating() const {
   case AccessorKind::WillSet:
   case AccessorKind::DidSet:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Modify:
   case AccessorKind::YieldingMutate:
   case AccessorKind::Init:

@@ -64,7 +64,9 @@ inline bool requiresFeatureCoroutineAccessors(AccessorKind kind) {
   case AccessorKind::WillSet:
   case AccessorKind::DidSet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Init:
   case AccessorKind::Borrow:
   case AccessorKind::Mutate:
@@ -87,7 +89,9 @@ inline bool requiresFeatureBorrowAndMutateAccessors(AccessorKind kind) {
   case AccessorKind::WillSet:
   case AccessorKind::DidSet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Init:
     return false;
   }
@@ -106,7 +110,9 @@ inline bool isYieldingAccessor(AccessorKind kind) {
   case AccessorKind::WillSet:
   case AccessorKind::DidSet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Init:
   case AccessorKind::Borrow:
   case AccessorKind::Mutate:
@@ -127,7 +133,9 @@ inline bool isYieldingImmutableAccessor(AccessorKind kind) {
   case AccessorKind::WillSet:
   case AccessorKind::DidSet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Init:
   case AccessorKind::Borrow:
   case AccessorKind::Mutate:
@@ -148,7 +156,9 @@ inline bool isYieldingMutableAccessor(AccessorKind kind) {
   case AccessorKind::WillSet:
   case AccessorKind::DidSet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Init:
   case AccessorKind::Borrow:
   case AccessorKind::Mutate:

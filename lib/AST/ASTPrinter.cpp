@@ -2899,6 +2899,7 @@ void PrintAST::printAccessors(const AbstractStorageDecl *ASD) {
       break;
     case ReadImplKind::Address:
       AddAccessorToPrint(AccessorKind::Address);
+      AddAccessorToPrint(AccessorKind::RawAddress);
       break;
     case ReadImplKind::Read:
       AddAccessorToPrint(AccessorKind::Read);
@@ -2933,6 +2934,7 @@ void PrintAST::printAccessors(const AbstractStorageDecl *ASD) {
       break;
     case WriteImplKind::MutableAddress:
       AddAccessorToPrint(AccessorKind::MutableAddress);
+      AddAccessorToPrint(AccessorKind::MutableRawAddress);
       AddAccessorToPrint(AccessorKind::WillSet);
       AddAccessorToPrint(AccessorKind::DidSet);
       break;
@@ -4632,12 +4634,14 @@ void PrintAST::visitAccessorDecl(AccessorDecl *decl) {
   case AccessorKind::Get:
   case AccessorKind::DistributedGet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::Read:
   case AccessorKind::YieldingBorrow:
   case AccessorKind::Modify:
   case AccessorKind::YieldingMutate:
   case AccessorKind::DidSet:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Borrow:
     recordDeclLoc(decl,
       [&]{

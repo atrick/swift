@@ -1639,6 +1639,7 @@ protected:
       break;
     }
     case AccessorKind::MutableAddress:
+    case AccessorKind::MutableRawAddress:
       if (useLazyInference()) {
         // Assume that a mutating method does not depend on its parameters.
         // Currently only for backward interface compatibility. Even though this

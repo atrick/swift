@@ -372,12 +372,14 @@ static bool doesAccessorNeedDynamicAttribute(AccessorDecl *accessor) {
       return storage->isDynamic();
     return false;
   }
-  case AccessorKind::MutableAddress: {
+  case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress: {
     if (!isObjC && storage->getWriteImpl() == WriteImplKind::MutableAddress)
       return storage->isDynamic();
     return false;
   }
-  case AccessorKind::Address: {
+  case AccessorKind::Address:
+  case AccessorKind::RawAddress: {
     if (!isObjC && storage->getReadImpl() == ReadImplKind::Address)
       return storage->isDynamic();
     return false;
@@ -1645,6 +1647,7 @@ SelfAccessKindRequest::evaluate(Evaluator &evaluator, FuncDecl *FD) const {
     // get/address default to non-mutating.
     switch (AD->getAccessorKind()) {
     case AccessorKind::Address:
+    case AccessorKind::RawAddress:
     case AccessorKind::Get:
     case AccessorKind::DistributedGet:
     case AccessorKind::Read:
@@ -1654,6 +1657,7 @@ SelfAccessKindRequest::evaluate(Evaluator &evaluator, FuncDecl *FD) const {
 
     case AccessorKind::Init:
     case AccessorKind::MutableAddress:
+    case AccessorKind::MutableRawAddress:
     case AccessorKind::Set:
     case AccessorKind::Modify:
     case AccessorKind::YieldingMutate:
@@ -2026,10 +2030,13 @@ bool swift::isMemberOperator(FuncDecl *decl, Type selfTy) {
 static Type buildAddressorResultType(AccessorDecl *addressor,
                                      Type valueType) {
   assert(addressor->getAccessorKind() == AccessorKind::Address ||
-         addressor->getAccessorKind() == AccessorKind::MutableAddress);
+         addressor->getAccessorKind() == AccessorKind::RawAddress ||
+         addressor->getAccessorKind() == AccessorKind::MutableAddress ||
+         addressor->getAccessorKind() == AccessorKind::MutableRawAddress);
 
   PointerTypeKind pointerKind =
-    (addressor->getAccessorKind() == AccessorKind::Address)
+    (addressor->getAccessorKind() == AccessorKind::Address ||
+     addressor->getAccessorKind() == AccessorKind::RawAddress)
       ? PTK_UnsafePointer
       : PTK_UnsafeMutablePointer;
   return valueType->wrapInPointer(pointerKind);
@@ -2063,7 +2070,9 @@ ResultTypeRequest::evaluate(Evaluator &evaluator, ValueDecl *decl) const {
 
     // Addressor result types can get complicated because of the owner.
     case AccessorKind::Address:
+    case AccessorKind::RawAddress:
     case AccessorKind::MutableAddress:
+    case AccessorKind::MutableRawAddress:
       return buildAddressorResultType(accessor, storage->getValueInterfaceType());
 
     // Coroutine accessors don't mention the value type directly.

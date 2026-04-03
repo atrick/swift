@@ -6069,7 +6069,9 @@ synthesizeBaseClassFieldGetterOrAddressGetterBody(AbstractFunctionDecl *afd,
                                                   void *context,
                                                   AccessorKind kind) {
   assert(kind == AccessorKind::Get || kind == AccessorKind::Address ||
-         kind == AccessorKind::MutableAddress);
+         kind == AccessorKind::RawAddress ||
+         kind == AccessorKind::MutableAddress ||
+         kind == AccessorKind::MutableRawAddress);
   ASTContext &ctx = afd->getASTContext();
 
   AccessorDecl *getterDecl = cast<AccessorDecl>(afd);
@@ -6104,7 +6106,8 @@ synthesizeBaseClassFieldGetterOrAddressGetterBody(AbstractFunctionDecl *afd,
                                  KeepReference
                            : ReferenceReturnTypeBehaviorForBaseMethodSynthesis::
                                  RemoveReference),
-                /*forceConstQualifier=*/kind != AccessorKind::MutableAddress);
+                /*forceConstQualifier=*/kind != AccessorKind::MutableAddress &&
+                    kind != AccessorKind::MutableRawAddress);
   } else if (auto *fd = dyn_cast_or_null<clang::FieldDecl>(baseClangDecl)) {
     ValueDecl *retainOperationFn = nullptr;
     // Check if this field getter is returning a retainable FRT.
@@ -6130,7 +6133,8 @@ synthesizeBaseClassFieldGetterOrAddressGetterBody(AbstractFunctionDecl *afd,
         retainOperationFn,
         kind == AccessorKind::Get
             ? ReferenceReturnTypeBehaviorForBaseAccessorSynthesis::ReturnByValue
-            : (kind == AccessorKind::Address
+            : (kind == AccessorKind::Address ||
+                       kind == AccessorKind::RawAddress
                    ? ReferenceReturnTypeBehaviorForBaseAccessorSynthesis::
                          ReturnByReference
                    : ReferenceReturnTypeBehaviorForBaseAccessorSynthesis::
@@ -6151,7 +6155,8 @@ synthesizeBaseClassFieldGetterOrAddressGetterBody(AbstractFunctionDecl *afd,
     auto selfDecl = getterDecl->getImplicitSelfDecl();
     auto selfExpr = new (ctx) DeclRefExpr(selfDecl, DeclNameLoc(),
                                           /*implicit*/ true);
-    if (kind == AccessorKind::MutableAddress) {
+    if (kind == AccessorKind::MutableAddress ||
+        kind == AccessorKind::MutableRawAddress) {
       selfExpr->setType(LValueType::get(selfDecl->getInterfaceType()));
       return Argument::implicitInOut(ctx, selfExpr);
     }
@@ -6188,7 +6193,7 @@ synthesizeBaseClassFieldGetterOrAddressGetterBody(AbstractFunctionDecl *afd,
 
   Expr *returnExpr = baseMemberCallExpr;
   // Cast an 'address' result from a mutable pointer if needed.
-  if (kind == AccessorKind::Address &&
+  if ((kind == AccessorKind::Address || kind == AccessorKind::RawAddress) &&
       baseGetterMethod->getResultInterfaceType()->isUnsafeMutablePointer()) {
     auto finalResultType = getterDecl->getResultInterfaceType();
     returnExpr = SwiftDeclSynthesizer::synthesizeReturnReinterpretCast(
@@ -6296,7 +6301,8 @@ makeBaseClassMemberAccessors(DeclContext *declContext,
   // types, unless the base accessor returns it by value.
   bool useAddress = contextTy->isNoncopyable() &&
                     (baseClassVar->getReadImpl() == ReadImplKind::Stored ||
-                     baseClassVar->getAccessor(AccessorKind::Address));
+                     baseClassVar->getAccessor(AccessorKind::Address) ||
+                     baseClassVar->getAccessor(AccessorKind::RawAddress));
 
   ParameterList *bodyParams = nullptr;
   if (auto subscript = dyn_cast<SubscriptDecl>(baseClassVar)) {
@@ -6488,7 +6494,8 @@ static ValueDecl *cloneBaseMemberDecl(ValueDecl *decl, DeclContext *newContext,
     auto isMutable = var->getWriteImpl() == WriteImplKind::Immutable
                          ? StorageIsNotMutable : StorageIsMutable;
     out->setImplInfo(
-        accessors[0]->getAccessorKind() == AccessorKind::Address
+        accessors[0]->getAccessorKind() == AccessorKind::Address ||
+            accessors[0]->getAccessorKind() == AccessorKind::RawAddress
             ? (accessors.size() > 1
                    ? StorageImplInfo(ReadImplKind::Address,
                                      WriteImplKind::MutableAddress,

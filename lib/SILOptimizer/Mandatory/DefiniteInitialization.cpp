@@ -1799,12 +1799,14 @@ void LifetimeChecker::handleInOutUse(const DIMemoryUse &Use) {
         case AccessorKind::Read:
         case AccessorKind::YieldingBorrow:
         case AccessorKind::Address:
+        case AccessorKind::RawAddress:
         case AccessorKind::Borrow:
           return false;
         case AccessorKind::Set:
         case AccessorKind::Modify:
         case AccessorKind::YieldingMutate:
         case AccessorKind::MutableAddress:
+        case AccessorKind::MutableRawAddress:
         case AccessorKind::DidSet:
         case AccessorKind::WillSet:
         case AccessorKind::Init:

@@ -146,9 +146,11 @@ class XRefTracePath {
           os << "(setter)";
           break;
         case Address:
+        case RawAddress:
           os << "(addressor)";
           break;
         case MutableAddress:
+        case MutableRawAddress:
           os << "(mutableAddressor)";
           break;
         case WillSet:

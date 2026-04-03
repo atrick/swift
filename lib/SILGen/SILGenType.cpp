@@ -1199,7 +1199,9 @@ originalAccessorKindForReplacementKind(AccessorKind kind) {
   case AccessorKind::WillSet:
   case AccessorKind::DidSet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
   case AccessorKind::Init:
   case AccessorKind::Borrow:
   case AccessorKind::Mutate:

@@ -264,6 +264,8 @@ static ValueDecl *getStandinForAccessor(AbstractStorageDecl *witness,
       return read;
     if (auto addressor = witness->getParsedAccessor(AccessorKind::Address))
       return addressor;
+    if (auto addressor = witness->getParsedAccessor(AccessorKind::RawAddress))
+      return addressor;
     break;
 
   case AccessorKind::Read:
@@ -271,6 +273,8 @@ static ValueDecl *getStandinForAccessor(AbstractStorageDecl *witness,
     if (auto getter = witness->getParsedAccessor(AccessorKind::Get))
       return getter;
     if (auto addressor = witness->getParsedAccessor(AccessorKind::Address))
+      return addressor;
+    if (auto addressor = witness->getParsedAccessor(AccessorKind::RawAddress))
       return addressor;
     break;
 
@@ -280,12 +284,16 @@ static ValueDecl *getStandinForAccessor(AbstractStorageDecl *witness,
       return setter;
     if (auto addressor = witness->getParsedAccessor(AccessorKind::MutableAddress))
       return addressor;
+    if (auto addressor = witness->getParsedAccessor(AccessorKind::MutableRawAddress))
+      return addressor;
     break;
 
   case AccessorKind::Set:
     if (auto modify = witness->getParsedAccessor(AccessorKind::Modify))
       return modify;
     if (auto addressor = witness->getParsedAccessor(AccessorKind::MutableAddress))
+      return addressor;
+    if (auto addressor = witness->getParsedAccessor(AccessorKind::MutableRawAddress))
       return addressor;
     break;
 
@@ -7244,7 +7252,9 @@ swift::findWitnessedObjCRequirements(const ValueDecl *witness,
     accessorKind = accessor->getAccessorKind();
     switch (*accessorKind) {
     case AccessorKind::Address:
+    case AccessorKind::RawAddress:
     case AccessorKind::MutableAddress:
+    case AccessorKind::MutableRawAddress:
     case AccessorKind::Read:
     case AccessorKind::YieldingBorrow:
     case AccessorKind::Modify:

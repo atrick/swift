@@ -1011,9 +1011,12 @@ IsSetterMutatingRequest::evaluate(Evaluator &evaluator,
     return result;
   }
 
-  case WriteImplKind::MutableAddress:
-    return storage->getParsedAccessor(AccessorKind::MutableAddress)
-      ->isMutating();
+  case WriteImplKind::MutableAddress: {
+    auto *accessor = storage->getParsedAccessor(AccessorKind::MutableAddress);
+    if (!accessor)
+      accessor = storage->getParsedAccessor(AccessorKind::MutableRawAddress);
+    return accessor->isMutating();
+  }
 
   case WriteImplKind::Modify:
     return storage->getParsedAccessor(AccessorKind::Modify)
@@ -1793,7 +1796,8 @@ synthesizeInheritedGetterBody(AccessorDecl *getter, ASTContext &ctx) {
 /// Synthesize the body of a getter which just delegates to an addressor.
 static std::pair<BraceStmt *, bool>
 synthesizeAddressedGetterBody(AccessorDecl *getter, ASTContext &ctx) {
-  assert(getter->getStorage()->getParsedAccessor(AccessorKind::Address));
+  assert(getter->getStorage()->getParsedAccessor(AccessorKind::Address) ||
+         getter->getStorage()->getParsedAccessor(AccessorKind::RawAddress));
 
   // This should call the addressor.
   return synthesizeTrivialGetterBody(getter, TargetImpl::Implementation, ctx);
@@ -2527,7 +2531,9 @@ synthesizeAccessorBody(AbstractFunctionDecl *fn, void *) {
   case AccessorKind::WillSet:
   case AccessorKind::DidSet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
     break;
 
   case AccessorKind::Init:
@@ -2707,6 +2713,9 @@ static AccessorDecl *createSetterPrototype(AbstractStorageDecl *storage,
       
   case WriteImplKind::MutableAddress:
     if (auto addr = storage->getOpaqueAccessor(AccessorKind::MutableAddress)) {
+      asAvailableAs.push_back(addr);
+    }
+    if (auto addr = storage->getOpaqueAccessor(AccessorKind::MutableRawAddress)) {
       asAvailableAs.push_back(addr);
     }
     break;
@@ -3258,7 +3267,9 @@ IsAccessorTransparentRequest::evaluate(Evaluator &evaluator,
   case AccessorKind::WillSet:
   case AccessorKind::DidSet:
   case AccessorKind::Address:
+  case AccessorKind::RawAddress:
   case AccessorKind::MutableAddress:
+  case AccessorKind::MutableRawAddress:
     llvm_unreachable("bad synthesized function kind");
   }
 
@@ -4144,11 +4155,13 @@ bool HasStorageRequest::evaluate(Evaluator &evaluator,
       storage->getParsedAccessor(AccessorKind::Read) ||
       storage->getParsedAccessor(AccessorKind::YieldingBorrow) ||
       storage->getParsedAccessor(AccessorKind::Address) ||
+      storage->getParsedAccessor(AccessorKind::RawAddress) ||
       storage->getParsedAccessor(AccessorKind::Borrow) ||
       storage->getParsedAccessor(AccessorKind::Set) ||
       storage->getParsedAccessor(AccessorKind::Modify) ||
       storage->getParsedAccessor(AccessorKind::YieldingMutate) ||
       storage->getParsedAccessor(AccessorKind::MutableAddress) ||
+      storage->getParsedAccessor(AccessorKind::MutableRawAddress) ||
       storage->getParsedAccessor(AccessorKind::Init) ||
       storage->getParsedAccessor(AccessorKind::Mutate))
     return false;
@@ -4338,7 +4351,8 @@ StorageImplInfoRequest::evaluate(Evaluator &evaluator,
   bool hasSetter = storage->getParsedAccessor(AccessorKind::Set);
   bool hasModify = storage->getParsedAccessor(AccessorKind::Modify);
   bool hasYieldingMutate = storage->getParsedAccessor(AccessorKind::YieldingMutate);
-  bool hasMutableAddress = storage->getParsedAccessor(AccessorKind::MutableAddress);
+  bool hasMutableAddress = storage->getParsedAccessor(AccessorKind::MutableAddress)
+    || storage->getParsedAccessor(AccessorKind::MutableRawAddress);
   bool hasInit = storage->getParsedAccessor(AccessorKind::Init);
   auto *borrow = storage->getParsedAccessor(AccessorKind::Borrow);
   auto *mutate = storage->getParsedAccessor(AccessorKind::Mutate);
@@ -4351,7 +4365,8 @@ StorageImplInfoRequest::evaluate(Evaluator &evaluator,
     readImpl = ReadImplKind::YieldingBorrow;
   } else if (storage->getParsedAccessor(AccessorKind::Read)) {
     readImpl = ReadImplKind::Read;
-  } else if (storage->getParsedAccessor(AccessorKind::Address)) {
+  } else if (storage->getParsedAccessor(AccessorKind::Address) ||
+             storage->getParsedAccessor(AccessorKind::RawAddress)) {
     readImpl = ReadImplKind::Address;
   } else if (storage->getParsedAccessor(AccessorKind::Borrow)) {
     readImpl = ReadImplKind::Borrow;

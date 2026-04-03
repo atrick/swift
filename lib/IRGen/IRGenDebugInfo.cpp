@@ -655,9 +655,11 @@ private:
           Kind = ".didset";
           break;
         case AccessorKind::Address:
+        case AccessorKind::RawAddress:
           Kind = ".addressor";
           break;
         case AccessorKind::MutableAddress:
+        case AccessorKind::MutableRawAddress:
           Kind = ".mutableAddressor";
           break;
         case AccessorKind::Read:

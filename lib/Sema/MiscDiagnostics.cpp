@@ -5173,7 +5173,9 @@ public:
             break;
 
           case AccessorKind::Address:
+          case AccessorKind::RawAddress:
           case AccessorKind::MutableAddress:
+          case AccessorKind::MutableRawAddress:
           case AccessorKind::Read:
           case AccessorKind::YieldingBorrow:
           case AccessorKind::Modify:
