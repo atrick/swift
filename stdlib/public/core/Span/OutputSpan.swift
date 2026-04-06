@@ -22,7 +22,7 @@ import Swift
 @frozen
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-public struct OutputSpan<Element: ~Copyable>: ~Copyable, ~Escapable {
+public struct OutputSpan<Element: ~Copyable & ~Escapable>: ~Copyable, ~Escapable {
   @usableFromInline
   internal let _pointer: UnsafeMutableRawPointer?
 
@@ -56,11 +56,11 @@ public struct OutputSpan<Element: ~Copyable>: ~Copyable, ~Escapable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension OutputSpan: @unchecked Sendable where Element: Sendable & ~Copyable {}
+extension OutputSpan: @unchecked Sendable where Element: Sendable & ~Copyable & ~Escapable {}
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension OutputSpan where Element: ~Copyable {
+extension OutputSpan where Element: ~Copyable & ~Escapable {
   @_alwaysEmitIntoClient
   @_transparent
   @unsafe
@@ -79,7 +79,7 @@ extension OutputSpan where Element: ~Copyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension OutputSpan where Element: ~Copyable {
+extension OutputSpan where Element: ~Copyable & ~Escapable {
   /// The number of initialized elements in this span.
   @_alwaysEmitIntoClient
   @_semantics("fixed_storage.get_count")
@@ -103,7 +103,7 @@ extension OutputSpan where Element: ~Copyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension OutputSpan where Element: ~Copyable  {
+extension OutputSpan where Element: ~Copyable & ~Escapable  {
 
   @unsafe
   @_alwaysEmitIntoClient
@@ -187,7 +187,7 @@ extension OutputSpan {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension OutputSpan where Element: ~Copyable {
+extension OutputSpan where Element: ~Copyable & ~Escapable {
   /// The type that represents an initialized position in an `OutputSpan`.
   public typealias Index = Int
 
@@ -212,14 +212,17 @@ extension OutputSpan where Element: ~Copyable {
   /// - Complexity: O(1)
   @_alwaysEmitIntoClient
   public subscript(_ index: Index) -> Element {
-    unsafeAddress {
+    @_lifetime(copy self)
+    @_unsafeSelfDependentResult
+    borrow {
       _checkIndex(index)
-      return unsafe UnsafePointer(_unsafeAddressOfElement(unchecked: index))
+      return unsafe _unsafeAddressOfElement(unchecked: index).pointee
     }
-    @lifetime(self: copy self)
-    unsafeMutableAddress {
+    @_lifetime(copy self)
+    @_unsafeSelfDependentResult
+    mutate {
       _checkIndex(index)
-      return unsafe _unsafeAddressOfElement(unchecked: index)
+      return unsafe &_unsafeAddressOfElement(unchecked: index).pointee
     }
   }
 
@@ -233,12 +236,15 @@ extension OutputSpan where Element: ~Copyable {
   @unsafe
   @_alwaysEmitIntoClient
   public subscript(unchecked index: Index) -> Element {
-    unsafeAddress {
-      unsafe UnsafePointer(_unsafeAddressOfElement(unchecked: index))
+    @_lifetime(copy self)
+    @_unsafeSelfDependentResult
+    borrow {
+      return unsafe _unsafeAddressOfElement(unchecked: index).pointee
     }
-    @lifetime(self: copy self)
-    unsafeMutableAddress {
-      unsafe _unsafeAddressOfElement(unchecked: index)
+    @_lifetime(copy self)
+    @_unsafeSelfDependentResult
+    mutate {
+      return unsafe &_unsafeAddressOfElement(unchecked: index).pointee
     }
   }
 
@@ -284,7 +290,7 @@ extension OutputSpan where Element: ~Copyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension OutputSpan where Element: ~Copyable {
+extension OutputSpan where Element: ~Copyable & ~Escapable {
   /// Append a single element to this span.
   @_alwaysEmitIntoClient
   @lifetime(self: copy self)
@@ -292,19 +298,6 @@ extension OutputSpan where Element: ~Copyable {
     _precondition(_count < capacity, "OutputSpan capacity overflow")
     unsafe _tail().initializeMemory(as: Element.self, to: value)
     _count &+= 1
-  }
-
-  /// Remove the last initialized element from this span.
-  ///
-  /// Returns the last element. The `OutputSpan` must not be empty.
-  @_alwaysEmitIntoClient
-  @lifetime(self: copy self)
-  public mutating func removeLast() -> Element {
-    _precondition(!isEmpty, "OutputSpan underflow")
-    _count &-= 1
-    return unsafe _tail().withMemoryRebound(to: Element.self, capacity: 1) {
-      unsafe $0.move()
-    }
   }
 
   /// Remove the last N elements of this span, returning the memory they occupy
@@ -335,6 +328,26 @@ extension OutputSpan where Element: ~Copyable {
   }
 }
 
+@available(SwiftCompatibilitySpan 5.0, *)
+@_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
+extension OutputSpan where Element: ~Copyable {
+  /// Remove the last initialized element from this span.
+  ///
+  /// Returns the last element. The `OutputSpan` must not be empty.
+  //
+  // FIXME: Handle Element: ~Escapable. Blocked on support for with-closure
+  // methods returning Result: ~Escapable.
+  @_alwaysEmitIntoClient
+  @lifetime(self: copy self)
+  public mutating func removeLast() -> Element {
+    _precondition(!isEmpty, "OutputSpan underflow")
+    _count &-= 1
+    return unsafe _tail().withMemoryRebound(to: Element.self, capacity: 1) {
+      unsafe $0.move()
+    }
+  }
+}
+
 //MARK: bulk-append functions
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
@@ -354,7 +367,7 @@ extension OutputSpan {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension OutputSpan where Element: ~Copyable {
+extension OutputSpan where Element: ~Copyable & ~Escapable {
   /// Borrow the underlying initialized memory for read-only access.
   @_alwaysEmitIntoClient
   @_transparent
@@ -386,7 +399,7 @@ extension OutputSpan where Element: ~Copyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension OutputSpan where Element: ~Copyable {
+extension OutputSpan where Element: ~Copyable & ~Escapable {
   /// Call the given closure with the unsafe buffer pointer addressed by this
   /// OutputSpan and a mutable reference to its count of initialized elements.
   ///
@@ -437,7 +450,7 @@ extension OutputSpan where Element: ~Copyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension OutputSpan where Element: ~Copyable {
+extension OutputSpan where Element: ~Copyable & ~Escapable {
   /// Consume the output span and return the number of initialized elements.
   ///
   /// This method should be invoked in the scope where the `OutputSpan` was

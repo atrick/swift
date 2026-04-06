@@ -20,7 +20,7 @@ import Swift
 @frozen
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-public struct MutableSpan<Element: ~Copyable>
+public struct MutableSpan<Element: ~Copyable & ~Escapable>
 : ~Copyable, ~Escapable {
   @usableFromInline
   internal let _pointer: UnsafeMutableRawPointer?
@@ -56,11 +56,11 @@ public struct MutableSpan<Element: ~Copyable>
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan: @unchecked Sendable where Element: Sendable & ~Copyable {}
+extension MutableSpan: @unchecked Sendable where Element: Sendable & ~Copyable & ~Escapable {}
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan where Element: ~Copyable {
+extension MutableSpan where Element: ~Copyable & ~Escapable {
 
   @unsafe
   @_alwaysEmitIntoClient
@@ -173,7 +173,7 @@ extension MutableSpan where Element: BitwiseCopyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension Span where Element: ~Copyable {
+extension Span where Element: ~Copyable & ~Escapable {
 
   @_alwaysEmitIntoClient
   @lifetime(borrow mutableSpan)
@@ -190,7 +190,7 @@ extension Span where Element: ~Copyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan where Element: ~Copyable {
+extension MutableSpan where Element: ~Copyable & ~Escapable {
 
   @_alwaysEmitIntoClient
   @_transparent
@@ -221,7 +221,7 @@ extension RawSpan {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan where Element: ~Copyable {
+extension MutableSpan where Element: ~Copyable & ~Escapable {
 
   @_alwaysEmitIntoClient
   public var _description: String {
@@ -235,7 +235,7 @@ extension MutableSpan where Element: ~Copyable {
 //MARK: Collection, RandomAccessCollection
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan where Element: ~Copyable {
+extension MutableSpan where Element: ~Copyable & ~Escapable {
 
   @_alwaysEmitIntoClient
   @_semantics("fixed_storage.get_count")
@@ -290,7 +290,7 @@ extension MutableSpan where Element: BitwiseCopyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan where Element: ~Copyable {
+extension MutableSpan where Element: ~Copyable & ~Escapable {
   // SILOptimizer looks for fixed_storage.check_index semantics for bounds check optimizations.
   @_semantics("fixed_storage.check_index")
   @inline(__always)
@@ -306,16 +306,17 @@ extension MutableSpan where Element: ~Copyable {
   /// - Complexity: O(1)
   @_alwaysEmitIntoClient
   public subscript(_ position: Index) -> Element {
-    @_transparent
-    unsafeAddress {
+    @_lifetime(copy self)
+    @_unsafeSelfDependentResult
+    borrow {
       _checkIndex(position)
-      return unsafe UnsafePointer(_unsafeAddressOfElement(unchecked: position))
+      return unsafe _unsafeAddressOfElement(unchecked: position).pointee
     }
-    @_transparent
-    @lifetime(self: copy self)
-    unsafeMutableAddress {
+    @_lifetime(copy self)
+    @_unsafeSelfDependentResult
+    mutate {
       _checkIndex(position)
-       return unsafe _unsafeAddressOfElement(unchecked: position)
+      return unsafe &_unsafeAddressOfElement(unchecked: position).pointee
     }
   }
 
@@ -330,14 +331,15 @@ extension MutableSpan where Element: ~Copyable {
   @unsafe
   @_alwaysEmitIntoClient
   public subscript(unchecked position: Index) -> Element {
-    @_transparent
-    unsafeAddress {
-      unsafe UnsafePointer(_unsafeAddressOfElement(unchecked: position))
+    @_lifetime(copy self)
+    @_unsafeSelfDependentResult
+    borrow {
+      return unsafe _unsafeAddressOfElement(unchecked: position).pointee
     }
-    @_transparent
-    @lifetime(self: copy self)
-    unsafeMutableAddress {
-      unsafe _unsafeAddressOfElement(unchecked: position)
+    @_lifetime(copy self)
+    @_unsafeSelfDependentResult
+    mutate {
+      return unsafe &_unsafeAddressOfElement(unchecked: position).pointee
     }
   }
 
@@ -354,7 +356,7 @@ extension MutableSpan where Element: ~Copyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan where Element: ~Copyable {
+extension MutableSpan where Element: ~Copyable & ~Escapable {
 
   @_alwaysEmitIntoClient
   @lifetime(self: copy self)
@@ -378,7 +380,7 @@ extension MutableSpan where Element: ~Copyable {
 
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan where Element: ~Copyable {
+extension MutableSpan where Element: ~Copyable & ~Escapable {
 
   //FIXME: mark closure parameter as non-escaping
   @_alwaysEmitIntoClient
@@ -453,7 +455,7 @@ extension MutableSpan {
 // MARK: sub-spans
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan where Element: ~Copyable {
+extension MutableSpan where Element: ~Copyable & ~Escapable {
 
   /// Constructs a new span over the items within the supplied range of
   /// positions within this span.
@@ -660,7 +662,7 @@ extension MutableSpan where Element: ~Copyable {
 // MARK: prefixes and suffixes
 @available(SwiftCompatibilitySpan 5.0, *)
 @_originallyDefinedIn(module: "Swift;CompatibilitySpan", SwiftCompatibilitySpan 6.2)
-extension MutableSpan where Element: ~Copyable {
+extension MutableSpan where Element: ~Copyable & ~Escapable {
 
   /// Returns a span containing the initial elements of this span,
   /// up to the specified maximum length.
@@ -867,7 +869,7 @@ extension MutableSpan where Element: ~Copyable {
 
 #if !SPAN_COMPATIBILITY_STUB
 @available(SwiftStdlib 6.4, *)
-extension MutableSpan: BorrowingSequence where Element: ~Copyable {
+extension MutableSpan: BorrowingSequence where Element: ~Copyable & ~Escapable {
   @available(SwiftStdlib 6.4, *)
   @inlinable
   @lifetime(borrow self)
