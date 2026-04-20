@@ -2229,11 +2229,56 @@ static ManagedValue emitBuiltinTaskAddPriorityEscalationHandler(
   return ManagedValue::forRValueWithoutOwnership(b);
 }
 
+static bool isBorrowedByAddress(SILGenFunction &SGF, SILType loweredTy) {
+  if (loweredTy.isAddressableForDeps(SGF.F)) {
+    return true;
+  }
+  if (!SGF.useLoweredAddresses())
+    return false;
+
+  return !loweredTy.isLoadable(SGF.F);
+}
+
+static ManagedValue emitBorrowObject(
+  SILGenFunction &SGF, SILLocation loc, SILType loweredBorrowTy,
+  ArgumentSource &&arg) {
+
+  // Loadable referent (therefore loadable borrow).
+  assert(loweredBorrowTy.isLoadable(SGF.F)
+         && "borrow must be loadable if referent is");
+
+  auto referent = std::move(arg).getAsSingleValue(
+    SGF, SGFContext::AllowGuaranteedPlusZero);
+  if (referent.getType().isAddress()) {
+    referent = SGF.B.createLoadBorrow(loc, referent);
+  }
+  auto borrow = SGF.B.createMakeBorrow(loc, referent.getValue());
+  return ManagedValue::forUnmanagedOwnedValue(borrow);
+}
+
+static ManagedValue emitBorrowAddress(
+  SILGenFunction &SGF, SILLocation loc, SILType loweredBorrowTy,
+  SILValue referentAddr, SGFContext C) {
+
+  if (loweredBorrowTy.isLoadable(SGF.F)) {
+    // Address referent, loadable borrow.
+    auto borrow = SGF.B.createMakeAddrBorrow(loc, referentAddr);
+    return ManagedValue::forUnmanagedOwnedValue(borrow);
+  }
+
+  // Address-only referent and borrow.
+  loweredBorrowTy = loweredBorrowTy.getAddressType();
+  auto buffer = SGF.getBufferForExprResult(loc, loweredBorrowTy, C);
+  SGF.B.createInitBorrowAddr(loc, buffer, referentAddr);
+  return SGF.manageBufferForExprResult(buffer,
+                                       SGF.getTypeLowering(loweredBorrowTy), C);
+}
+
 static ManagedValue emitBuiltinMakeBorrow(SILGenFunction &SGF,
-                                       SILLocation loc,
-                                       SubstitutionMap subs,
-                                       PreparedArguments &&preparedArgs,
-                                       SGFContext C) {
+                                          SILLocation loc,
+                                          SubstitutionMap subs,
+                                          PreparedArguments &&preparedArgs,
+                                          SGFContext C) {
   auto args = std::move(preparedArgs).getSources();
   ASSERT(args.size() == 1 && "should only have one argument");
   ASSERT(subs.getReplacementTypes().size() == 1
@@ -2243,30 +2288,9 @@ static ManagedValue emitBuiltinMakeBorrow(SILGenFunction &SGF,
   auto loweredArgTy = SGF.getLoweredType(argTy);
   auto loweredBorrowTy = SILType::getPrimitiveObjectType(
        BuiltinBorrowType::get(loweredArgTy.getASTType()));
-
-  bool loadableReferent;
-  if (loweredArgTy.isAddressableForDeps(SGF.F)) {
-    loadableReferent = false;
-  } else {
-    loadableReferent = !SGF.useLoweredAddresses()
-      || loweredArgTy.isLoadable(SGF.F);
+  if (!isBorrowedByAddress(SGF, loweredArgTy)) {
+    return emitBorrowObject(SGF, loc, loweredBorrowTy, std::move(args[0]));
   }
-
-  if (loadableReferent) {
-    // Loadable referent (therefore loadable borrow).
-    assert(loweredBorrowTy.isLoadable(SGF.F)
-           && "borrow must be loadable if referent is");
-
-    auto referent = std::move(args[0]).getAsSingleValue(SGF,
-                                          SGFContext::AllowGuaranteedPlusZero);
-    if (referent.getType().isAddress()) {
-      referent = SGF.B.createLoadBorrow(loc, referent);
-    }
-    
-    auto borrow = SGF.B.createMakeBorrow(loc, referent.getValue());
-    return ManagedValue::forUnmanagedOwnedValue(borrow);
-  }
-
   // Form an address referent by prefering the addressable representation
   // if available.
   ManagedValue referent
@@ -2279,20 +2303,9 @@ static ManagedValue emitBuiltinMakeBorrow(SILGenFunction &SGF,
       referent = SGF.B.createStoreBorrowOrTrivial(loc, referent, temp);
     }
   }
-  
-  if (loweredBorrowTy.isLoadable(SGF.F)) {
-    // Address referent, loadable borrow.
-    // 
-    auto borrow = SGF.B.createMakeAddrBorrow(loc, referent.getValue());
-    return ManagedValue::forUnmanagedOwnedValue(borrow);
-  }
+  return emitBorrowAddress(SGF, loc, loweredBorrowTy, referent.getValue(), C);
+}
 
-  // Address-only referent and borrow.
-  loweredBorrowTy = loweredBorrowTy.getAddressType();
-  auto buffer = SGF.getBufferForExprResult(loc, loweredBorrowTy, C);
-  SGF.B.createInitBorrowAddr(loc, buffer, referent.getValue());
-  return SGF.manageBufferForExprResult(buffer,
-                                       SGF.getTypeLowering(loweredBorrowTy), C);
 }
 
 static ManagedValue emitBuiltinDereferenceBorrow(SILGenFunction &SGF,
