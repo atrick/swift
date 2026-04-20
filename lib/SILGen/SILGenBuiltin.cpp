@@ -2306,6 +2306,40 @@ static ManagedValue emitBuiltinMakeBorrow(SILGenFunction &SGF,
   return emitBorrowAddress(SGF, loc, loweredBorrowTy, referent.getValue(), C);
 }
 
+static ManagedValue emitBuiltinBorrowAt(SILGenFunction &SGF,
+                                        SILLocation loc,
+                                        SubstitutionMap subs,
+                                        ArrayRef<ManagedValue> args,
+                                        SGFContext C) {
+  ASSERT(subs.getReplacementTypes().size() == 1 &&
+         "makeBorrowAt should have one type argument");
+  ASSERT(args.size() == 1 && "makeBorrowAt should have a single argument");
+
+  // The substitution determines the type of the thing we're borrowing.
+
+  auto argTy = subs.getReplacementTypes()[0]->getCanonicalType();
+  auto loweredArgTy = SGF.getLoweredType(argTy);
+
+  // Convert the pointer argument to a SIL address.
+  //
+  // Default to an unaligned pointer. This can be optimized in the presence of
+  // Builtin.assumeAlignment.
+  //
+  // Assume the borrowed value's address is from a raw pointer. Make no attempt
+  // at strict aliasing.
+  //
+  // The memory is invariant over the borrow scope, but not generally invariant.
+  //
+  // Assume natural alignment.
+  SILValue addr =
+    SGF.B.createPointerToAddress(loc, args[0].getUnmanagedValue(),
+                                 loweredArgTy.getAddressType(),
+                                 /*isStrict*/false, /*isInvariant*/false,
+                                 llvm::MaybeAlign());
+
+  // This can only be used in a borrow accessor. For bitwise-borrowable types,
+  // the accessor will emit the load_borrow + return_borrow pair.
+  return ManagedValue::forRValueWithoutOwnership(addr);
 }
 
 static ManagedValue emitBuiltinDereferenceBorrow(SILGenFunction &SGF,
