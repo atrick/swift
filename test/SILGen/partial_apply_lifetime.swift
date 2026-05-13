@@ -1,5 +1,7 @@
 // RUN: %target-swift-emit-silgen -module-name partial_apply_lifetime -enable-experimental-feature Lifetimes %s | %FileCheck %s
 
+// REQUIRES: swift_feature_Lifetimes
+
 // These tests exercise the lifetime dependencies computed for partial_apply
 // result types by LifetimeDependenceInfo::partialApply. Each case pins down
 // exactly what partialApply must produce by declaring an explicit
