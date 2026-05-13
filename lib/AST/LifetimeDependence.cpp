@@ -2068,8 +2068,9 @@ ArrayRef<LifetimeDependenceInfo> LifetimeDependenceInfo::partialApply(
     ASTContext &ctx, ArrayRef<LifetimeDependenceInfo> lifetimes,
     unsigned numFormalParams, unsigned numBoundParams) {
 
-  ASSERT(numBoundParams > 0 &&
-         "A partial application must bind at least 1 argument");
+  if (numBoundParams == 0)
+    return lifetimes;
+
   ASSERT(numBoundParams <= numFormalParams &&
          "A partial application can only bind as many parameters as the "
          "function has.");
