@@ -1,4 +1,6 @@
-// RUN: %target-swift-frontend -emit-ir -O %s
+// RUN: %target-swift-frontend -emit-ir -O -enable-experimental-feature Lifetimes %s
+
+// REQUIRES: swift_feature_Lifetimes
 
 // Minimal reproducer for IRGen crash: rdar://176795176
 
