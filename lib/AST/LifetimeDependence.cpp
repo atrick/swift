@@ -2139,6 +2139,9 @@ ArrayRef<LifetimeDependenceInfo> LifetimeDependenceInfo::partialApply(
                                              conditionallyAddressable, flags));
   }
 
+  // FIXME: Avoid allocating context memory for every partial apply. Instead,
+  // cache a single uniqueLifetimeDependenceInfo array for each combination
+  // of FunctionType + numBoundParams.
   return ctx.AllocateCopy(curried);
 }
 
