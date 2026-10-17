@@ -238,3 +238,48 @@ public func testAccessProp(c: C, v: Int) {
 // WMO: apply [[F1]]([[A4]], %1) : $@convention(thin) (@inout Int, Int) -> ()
 // WMO: end_access [[A4]]
 // WMO-LABEL: } // end sil function '$s10access_wmo14testAccessProp1c1vyAA1CC_SitF'
+
+// ===---------------------------------------------------------------------===//
+// AccessorClass: public read and modify coroutine accessors of internal
+// storage.
+//
+// The accessor's access scope spans the yield, during which the caller runs
+// arbitrary code. That code may access the same storage (e.g. via
+// setReadStorage), so even with WMO the accesses must remain dynamic.
+//
+// readStorage is a non-trivial type so that the read access is not ended
+// before the yield.
+// ===---------------------------------------------------------------------===//
+public final class AccessorClass {
+  var readStorage: String = ""
+  var modifyStorage: Int = 0
+
+  public init() {}
+
+  public var readProp: String {
+    _read { yield readStorage }
+  }
+
+  public var modifyProp: Int {
+    get { modifyStorage }
+    _modify { yield &modifyStorage }
+  }
+
+  public func setReadStorage(_ v: String) {
+    readStorage = v
+  }
+}
+
+// WMO-LABEL: sil @$s10access_wmo13AccessorClassC8readPropSSvr : $@yield_once @convention(method) (@guaranteed AccessorClass) -> @yields @guaranteed String {
+// WMO: [[A:%.*]] = begin_access [read] [dynamic] %{{.*}} : $*String
+// WMO: yield
+// WMO-LABEL: } // end sil function '$s10access_wmo13AccessorClassC8readPropSSvr'
+
+// WMO-LABEL: sil @$s10access_wmo13AccessorClassC10modifyPropSivM : $@yield_once @convention(method) (@guaranteed AccessorClass) -> @yields @inout Int {
+// WMO: [[A:%.*]] = begin_access [modify] [dynamic] %{{.*}} : $*Int
+// WMO: yield [[A]]
+// WMO-LABEL: } // end sil function '$s10access_wmo13AccessorClassC10modifyPropSivM'
+
+// WMO-LABEL: sil @$s10access_wmo13AccessorClassC14setReadStorageyySSF : $@convention(method) (@guaranteed String, @guaranteed AccessorClass) -> () {
+// WMO: begin_access [modify] [dynamic] [no_nested_conflict] %{{.*}} : $*String
+// WMO-LABEL: } // end sil function '$s10access_wmo13AccessorClassC14setReadStorageyySSF'

@@ -1,4 +1,5 @@
 // RUN: %target-sil-opt -sil-print-types -wmo -access-enforcement-wmo %s -enable-sil-verify-all | %FileCheck %s
+// RUN: %target-sil-opt -sil-print-types -wmo -access-enforcement-opts -access-enforcement-wmo %s -enable-sil-verify-all | %FileCheck %s --check-prefix=OPTS
 //
 // Test the AccessEnforcementWMO pass in isolation. This ensures that
 // no upstream passes have removed SIL-level access markers that are
@@ -23,6 +24,13 @@ public class C {
   @_hasStorage var keyPathProp: Int64 { get set }
   @_hasStorage final var finalKeyPathProp: Int64 { get set }
   @_hasStorage public var publicProp: Int64 { get set }
+  init()
+  deinit
+}
+
+public final class AccessorClass {
+  @_hasStorage var readStorage: String { get set }
+  @_hasStorage var modifyStorage: Int64 { get set }
   init()
   deinit
 }
@@ -336,3 +344,78 @@ bb0(%0 : $Builtin.RawPointer, %1 : $*Builtin.UnsafeValueBuffer, %2 : $C):
   %9 = tuple (%5 : $Builtin.RawPointer, %8 : $Optional<Builtin.RawPointer>)
   return %9 : $(Builtin.RawPointer, Optional<Builtin.RawPointer>)
 } // end sil function '$s10access_wmo1CC10publicPropSivm'
+
+// ===---------------------------------------------------------------------===//
+// Public read and modify coroutine accessors of internal storage.
+//
+// The accessor's access scope spans the yield, during which the caller runs
+// arbitrary code. Even though every access to the storage is visible to the
+// module, AccessEnforcementOpts must treat the yield as a potential nested
+// conflict, so AccessEnforcementWMO must keep the accesses dynamic.
+// ===---------------------------------------------------------------------===//
+
+// AccessorClass.readProp.read
+// CHECK-LABEL: sil @$s10access_wmo13AccessorClassC8readPropSSvr : $@yield_once @convention(method) (@guaranteed AccessorClass) -> @yields @guaranteed String {
+// CHECK: begin_access [read] [dynamic] %{{.*}} : $*String
+// CHECK-LABEL: } // end sil function '$s10access_wmo13AccessorClassC8readPropSSvr'
+// OPTS-LABEL: sil @$s10access_wmo13AccessorClassC8readPropSSvr : $@yield_once @convention(method) (@guaranteed AccessorClass) -> @yields @guaranteed String {
+// OPTS: begin_access [read] [dynamic] %{{.*}} : $*String
+// OPTS-LABEL: } // end sil function '$s10access_wmo13AccessorClassC8readPropSSvr'
+sil @$s10access_wmo13AccessorClassC8readPropSSvr : $@yield_once @convention(method) (@guaranteed AccessorClass) -> @yields @guaranteed String {
+bb0(%0 : $AccessorClass):
+  %1 = ref_element_addr %0 : $AccessorClass, #AccessorClass.readStorage
+  %2 = begin_access [read] [dynamic] %1 : $*String
+  %3 = load %2 : $*String
+  yield %3 : $String, resume bb1, unwind bb2
+
+bb1:
+  end_access %2 : $*String
+  %6 = tuple ()
+  return %6 : $()
+
+bb2:
+  end_access %2 : $*String
+  unwind
+} // end sil function '$s10access_wmo13AccessorClassC8readPropSSvr'
+
+// AccessorClass.setReadStorage(_:)
+//
+// A write to readStorage that could execute during readProp's yield.
+// OPTS-LABEL: sil @$s10access_wmo13AccessorClassC14setReadStorageyySSF : $@convention(method) (@guaranteed String, @guaranteed AccessorClass) -> () {
+// OPTS: begin_access [modify] [dynamic] [no_nested_conflict] %{{.*}} : $*String
+// OPTS-LABEL: } // end sil function '$s10access_wmo13AccessorClassC14setReadStorageyySSF'
+sil @$s10access_wmo13AccessorClassC14setReadStorageyySSF : $@convention(method) (@guaranteed String, @guaranteed AccessorClass) -> () {
+bb0(%0 : $String, %1 : $AccessorClass):
+  retain_value %0 : $String
+  %3 = ref_element_addr %1 : $AccessorClass, #AccessorClass.readStorage
+  %4 = begin_access [modify] [dynamic] [no_nested_conflict] %3 : $*String
+  %5 = load %4 : $*String
+  store %0 to %4 : $*String
+  end_access %4 : $*String
+  release_value %5 : $String
+  %9 = tuple ()
+  return %9 : $()
+} // end sil function '$s10access_wmo13AccessorClassC14setReadStorageyySSF'
+
+// AccessorClass.modifyProp.modify
+// CHECK-LABEL: sil @$s10access_wmo13AccessorClassC10modifyPropSivM : $@yield_once @convention(method) (@guaranteed AccessorClass) -> @yields @inout Int64 {
+// CHECK: begin_access [modify] [dynamic] %{{.*}} : $*Int64
+// CHECK-LABEL: } // end sil function '$s10access_wmo13AccessorClassC10modifyPropSivM'
+// OPTS-LABEL: sil @$s10access_wmo13AccessorClassC10modifyPropSivM : $@yield_once @convention(method) (@guaranteed AccessorClass) -> @yields @inout Int64 {
+// OPTS: begin_access [modify] [dynamic] %{{.*}} : $*Int64
+// OPTS-LABEL: } // end sil function '$s10access_wmo13AccessorClassC10modifyPropSivM'
+sil @$s10access_wmo13AccessorClassC10modifyPropSivM : $@yield_once @convention(method) (@guaranteed AccessorClass) -> @yields @inout Int64 {
+bb0(%0 : $AccessorClass):
+  %1 = ref_element_addr %0 : $AccessorClass, #AccessorClass.modifyStorage
+  %2 = begin_access [modify] [dynamic] %1 : $*Int64
+  yield %2 : $*Int64, resume bb1, unwind bb2
+
+bb1:
+  end_access %2 : $*Int64
+  %5 = tuple ()
+  return %5 : $()
+
+bb2:
+  end_access %2 : $*Int64
+  unwind
+} // end sil function '$s10access_wmo13AccessorClassC10modifyPropSivM'
