@@ -982,6 +982,10 @@ const ValueDecl *AccessStorage::getDecl() const {
     if (auto *allocBox = dyn_cast<AllocBoxInst>(getRoot())) {
       return allocBox->getLoc().getAsASTNode<VarDecl>();
     }
+    // A box captured by a closure or local function.
+    if (auto *arg = dyn_cast<SILFunctionArgument>(getRoot())) {
+      return arg->getDecl();
+    }
     return nullptr;
   case Class: {
     // The property index is relative to the VarDecl in ref_element_addr, and

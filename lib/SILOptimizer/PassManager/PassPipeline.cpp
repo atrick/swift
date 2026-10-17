@@ -108,11 +108,11 @@ static void addMandatoryDiagnosticOptPipeline(SILPassPipelinePlan &P) {
   // This guarantees that stack-promotable boxes have [static] enforcement.
   P.addAccessEnforcementSelection();
 
-  P.addMandatoryAllocBoxToStack();
-
-  // Needs to run after MandatoryAllocBoxToStack, because MandatoryAllocBoxToStack
-  // can convert dynamic accesses to static accesses.
+  // Diagnose before MandatoryAllocBoxToStack. Promotion depends on the
+  // optimization level, and exclusivity diagnostics must not.
   P.addDiagnoseStaticExclusivity();
+
+  P.addMandatoryAllocBoxToStack();
 
   P.addNoReturnFolding();
   P.addBooleanLiteralFolding();

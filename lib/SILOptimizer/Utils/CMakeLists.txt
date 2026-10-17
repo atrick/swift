@@ -1,5 +1,6 @@
 target_sources(swiftSILOptimizer PRIVATE
   BasicBlockOptUtils.cpp
+  BoxAccessSummary.cpp
   CFGOptUtils.cpp
   CanonicalizeInstruction.cpp
   OSSACanonicalizeOwned.cpp

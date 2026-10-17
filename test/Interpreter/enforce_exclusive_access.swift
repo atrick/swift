@@ -39,6 +39,11 @@ var globalX = X()
 
 var ExclusiveAccessTestSuite = TestSuite("ExclusiveAccess")
 
+// Closures that capture a variable by box only conflict on some paths when
+// they access it under this condition. A conflict on every path is diagnosed
+// statically. See SILOptimizer/exclusivity_static_diagnostics_box.swift.
+let alwaysTrue = CommandLine.arguments.count > 0
+
 ExclusiveAccessTestSuite.test("Read") {
   let l = globalX // no-trap
   _blackHole(l)
@@ -165,7 +170,7 @@ ExclusiveAccessTestSuite.test("InoutReadEscapeWrite")
   .code
 {
   var x = 3
-  let c = { x = 42 }
+  let c = { if alwaysTrue { x = 42 } }
   expectCrashLater()
   readAndPerform(&x, closure: c) 
   _blackHole(x)
@@ -180,7 +185,7 @@ ExclusiveAccessTestSuite.test("InoutWriteEscapeRead")
   .code
 {
   var x = 3
-  let c = { let y = x; _blackHole(y) }
+  let c = { if alwaysTrue { let y = x; _blackHole(y) } }
   expectCrashLater()
   modifyAndPerform(&x, closure: c)
   _blackHole(x)
@@ -195,7 +200,7 @@ ExclusiveAccessTestSuite.test("InoutWriteEscapeWrite")
   .code
 {
   var x = 3
-  let c = { x = 42 }
+  let c = { if alwaysTrue { x = 42 } }
   expectCrashLater()
   modifyAndPerform(&x, closure: c)
   _blackHole(x)
@@ -416,7 +421,7 @@ struct RecursiveCaptureViolation {
   func testBadness() -> Bool {
     var flag = false
     func local1(_ x: inout Bool) {
-      if !flag {
+      if alwaysTrue, !flag {
         x = true
         local2()
       }

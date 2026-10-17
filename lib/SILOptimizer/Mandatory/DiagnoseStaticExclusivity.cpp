@@ -39,6 +39,7 @@
 #include "swift/SILOptimizer/Analysis/PostOrderAnalysis.h"
 #include "swift/SILOptimizer/PassManager/Passes.h"
 #include "swift/SILOptimizer/PassManager/Transforms.h"
+#include "swift/SILOptimizer/Utils/BoxAccessSummary.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 
@@ -691,6 +692,8 @@ namespace {
 struct AccessState {
   AccessSummaryAnalysis *ASA;
 
+  BoxAccessSummary *BoxSummary;
+
   // Stores the accesses that have been found to conflict. Used to defer
   // emitting diagnostics until we can determine whether they should
   // be suppressed.
@@ -711,7 +714,8 @@ struct AccessState {
 
   StorageMap *Accesses = nullptr;
 
-  AccessState(AccessSummaryAnalysis *ASA) : ASA(ASA) {}
+  AccessState(AccessSummaryAnalysis *ASA, BoxAccessSummary *BoxSummary)
+      : ASA(ASA), BoxSummary(BoxSummary) {}
 };
 } // namespace
 
@@ -854,6 +858,73 @@ static void checkForViolationAtApply(ApplySite Apply, AccessState &State) {
     checkForViolationAtApply(ApplySite(PAI), State);
 }
 
+/// Add the reference roots of the boxes passed to \p Apply, directly or
+/// captured by a closure that is an argument or the callee.
+static void findBoxesPassedToCall(FullApplySite Apply,
+                                  llvm::SmallSetVector<SILValue, 4> &Roots) {
+  auto addClosureCaptures = [&](SILValue Value) {
+    auto FnType = getSILFunctionTypeForValue(Value);
+    if (!FnType)
+      return;
+    // The closure stored in an escaping block can't be found.
+    if (!FnType->isNoEscape() &&
+        FnType->getRepresentation() == SILFunctionTypeRepresentation::Block)
+      return;
+    TinyPtrVector<PartialApplyInst *> Closures;
+    findClosuresForFunctionValue(Value, Closures);
+    for (auto *Closure : Closures) {
+      for (SILValue Captured : Closure->getArguments()) {
+        if (Captured->getType().is<SILBoxType>())
+          Roots.insert(findReferenceRoot(Captured));
+      }
+    }
+  };
+  for (SILValue Argument : Apply.getArguments()) {
+    if (Argument->getType().is<SILBoxType>())
+      Roots.insert(findReferenceRoot(Argument));
+    else
+      addClosureCaptures(Argument);
+  }
+  addClosureCaptures(Apply.getCallee());
+}
+
+/// Check for conflicts between in-progress accesses to a box and the accesses
+/// to the same box during \p Apply: by a callee that takes the box, such as a
+/// local function, or by a closure that captures the box.
+///
+/// A box is used for a variable captured by a closure that may escape, so its
+/// accesses are dynamically enforced unless proven otherwise. A conflict is
+/// only diagnosed if the access during the call happens on every path through
+/// the call. Otherwise, dynamic enforcement might accept the program.
+static void checkBoxAccessesDuringCall(FullApplySite Apply,
+                                       AccessState &State) {
+  llvm::SmallSetVector<SILValue, 4> Roots;
+  findBoxesPassedToCall(Apply, Roots);
+  for (SILValue Root : Roots) {
+    // Are there any accesses in progress at the time of the call?
+    auto AccessIt = llvm::find_if(*State.Accesses, [&](const auto &Entry) {
+      const AccessStorage &Storage = Entry.getFirst();
+      return Storage.getKind() == AccessStorage::Box &&
+             Storage.getValue() == Root;
+    });
+    if (AccessIt == State.Accesses->end())
+      continue;
+
+    BoxAccesses Accesses = State.BoxSummary->getAccessesDuringCall(Apply, Root);
+    if (!Accesses.mustAccess)
+      continue;
+
+    auto CallAccess = RecordedAccess(*Accesses.mustAccess, Accesses.mustLoc,
+                                     Apply.getModule().getIndexTrieRoot());
+    const AccessInfo &Info = AccessIt->getSecond();
+    if (auto InProgressAccess = shouldReportAccess(Info, *Accesses.mustAccess,
+                                                   CallAccess.getSubPath())) {
+      State.recordConflictingAccess(AccessIt->getFirst(), *InProgressAccess,
+                                    CallAccess);
+    }
+  }
+}
+
 // Apply transfer function to the AccessState. Beginning an access
 // increments the read or write count for the storage location;
 // Ending one decrements the count.
@@ -914,6 +985,7 @@ static void checkForViolationsAtInstruction(SILInstruction &I,
         return;
       }
     }
+    checkBoxAccessesDuringCall(apply, State);
     checkForViolationAtApply(apply, State);
     return;
   }
@@ -924,7 +996,8 @@ static void checkForViolationsAtInstruction(SILInstruction &I,
 }
 
 static void checkStaticExclusivity(SILFunction &Fn, PostOrderFunctionInfo *PO,
-                                   AccessSummaryAnalysis *ASA) {
+                                   AccessSummaryAnalysis *ASA,
+                                   BoxAccessSummary *BoxSummary) {
   // The implementation relies on the following SIL invariants:
   //    - All incoming edges to a block must have the same in-progress
   //      accesses. This enables the analysis to not perform a data flow merge
@@ -943,7 +1016,7 @@ static void checkStaticExclusivity(SILFunction &Fn, PostOrderFunctionInfo *PO,
   if (Fn.empty())
     return;
 
-  AccessState State(ASA);
+  AccessState State(ASA, BoxSummary);
 
   // For each basic block, track the stack of current accesses on
   // exit from that block.
@@ -1096,6 +1169,7 @@ public:
 
 private:
   void run() override {
+    BoxAccessSummary boxSummary(getAnalysis<AccessSummaryAnalysis>());
     for (auto &function : *getModule()) {
       if (!function.isDefinition())
         continue;
@@ -1112,7 +1186,7 @@ private:
       PostOrderFunctionInfo *PO =
         getAnalysis<PostOrderAnalysis>()->get(&function);
       auto *ASA = getAnalysis<AccessSummaryAnalysis>();
-      checkStaticExclusivity(function, PO, ASA);
+      checkStaticExclusivity(function, PO, ASA, &boxSummary);
     }
   }
 };

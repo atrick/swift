@@ -551,6 +551,12 @@ getSingleAddressProjectionUser(SingleValueInstruction *I) {
       // uses. It only uses the address, it does not produce a new address.
       continue;
     }
+    case SILInstructionKind::MarkUnresolvedNonCopyableValueInst: {
+      // The move-only checker's marker produces the same address. The caller
+      // looks through it without adding a path component.
+      SingleUser = cast<SingleValueInstruction>(User);
+      break;
+    }
     default:
       return std::make_pair(nullptr, 0);
     }
@@ -573,7 +579,8 @@ AccessSummaryAnalysis::findSubPathAccessed(BeginAccessInst *BAI) {
     if (!ProjectionUser.first)
       break;
 
-    SubPath = SubPath->getChild(ProjectionUser.second);
+    if (!isa<MarkUnresolvedNonCopyableValueInst>(ProjectionUser.first))
+      SubPath = SubPath->getChild(ProjectionUser.second);
     Iter = ProjectionUser.first;
   }
 

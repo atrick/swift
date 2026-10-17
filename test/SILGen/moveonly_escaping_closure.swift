@@ -78,7 +78,7 @@ func testGlobalClosureCaptureVar() {
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         borrowConsumeVal(x, x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
-        // expected-error @-1:29 {{overlapping accesses, but deinitialization requires exclusive access}}
+        // expected-error @-1:29 {{overlapping accesses to 'x', but deinitialization requires exclusive access}}
         // expected-note @-2:26 {{conflicting access is here}}
     }
     globalClosureCaptureVar()
@@ -204,7 +204,7 @@ func testLocalVarClosureCaptureVar() {
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         borrowConsumeVal(x, x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
-        // expected-error @-1 {{overlapping accesses, but deinitialization requires exclusive access}}
+        // expected-error @-1 {{overlapping accesses to 'x', but deinitialization requires exclusive access}}
         // expected-note @-2 {{conflicting access is here}}
     }
     f = {}
@@ -266,7 +266,7 @@ func testInOutVarClosureCaptureVar(_ f: inout () -> ()) {
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         borrowConsumeVal(x, x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
-        // expected-error @-1 {{overlapping accesses, but deinitialization requires exclusive access}}
+        // expected-error @-1 {{overlapping accesses to 'x', but deinitialization requires exclusive access}}
         // expected-note @-2 {{conflicting access is here}}
     }
     f()
@@ -337,7 +337,7 @@ func testConsumingEscapeClosureCaptureVar(_ f: consuming @escaping () -> ()) {
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         borrowConsumeVal(x, x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
-        // expected-error @-1 {{overlapping accesses, but deinitialization requires exclusive access}}
+        // expected-error @-1 {{overlapping accesses to 'x', but deinitialization requires exclusive access}}
         // expected-note @-2 {{conflicting access is here}}
     }
     f()
@@ -912,7 +912,7 @@ func testGlobalClosureCaptureConsuming(_ x: consuming SingleElt) {
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         borrowConsumeVal(x, x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
-        // expected-error @-1:29 {{overlapping accesses, but deinitialization requires exclusive access}}
+        // expected-error @-1:29 {{overlapping accesses to 'x', but deinitialization requires exclusive access}}
         // expected-note @-2:26 {{conflicting access is here}}
     }
     globalClosureCaptureConsuming()
@@ -990,7 +990,7 @@ func testLocalLetClosureCaptureConsuming2(_ x: consuming SingleElt) -> (() -> ()
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         borrowConsumeVal(x, x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
-        // expected-error @-1 {{overlapping accesses, but deinitialization requires exclusive access}}
+        // expected-error @-1 {{overlapping accesses to 'x', but deinitialization requires exclusive access}}
         // expected-note @-2 {{conflicting access is here}}
     }
     f()
@@ -1047,7 +1047,7 @@ func testLocalVarClosureCaptureConsuming(_ x: consuming SingleElt) {
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         borrowConsumeVal(x, x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
-        // expected-error @-1 {{overlapping accesses, but deinitialization requires exclusive access}}
+        // expected-error @-1 {{overlapping accesses to 'x', but deinitialization requires exclusive access}}
         // expected-note @-2 {{conflicting access is here}}
     }
     f = {}
@@ -1117,7 +1117,7 @@ func testConsumingEscapeClosureCaptureConsuming(_ f: consuming @escaping () -> (
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         consumeVal(x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
         borrowConsumeVal(x, x) // expected-error {{non-'Copyable' 'x' cannot be consumed when captured by an escaping closure}}
-        // expected-error @-1 {{overlapping accesses, but deinitialization requires exclusive access}}
+        // expected-error @-1 {{overlapping accesses to 'x', but deinitialization requires exclusive access}}
         // expected-note @-2 {{conflicting access is here}}
     }
     f()
