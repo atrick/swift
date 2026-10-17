@@ -270,20 +270,21 @@ func inoutReadWriteInout(x: inout Int) {
 
 // CHECK-LABEL: sil hidden @$s27access_enforcement_noescape19inoutReadWriteInout1xySiz_tF : $@convention(thin) (@inout Int) -> () {
 
-// Traps on boxed read + write inout.
-// Covered by Interpreter/enforce_exclusive_access.swift.
+// Boxed read + write inout. doOneInout never calls the closure, so static
+// enforcement is equivalent. A call that may conflict traps at run time:
+// covered by Interpreter/enforce_exclusive_access.swift.
 func readBoxWriteInout() {
   var x = 3
   let c = { _ = x }
-  // Around the call: [modify] [dynamic]
-  // Inside closure: [read] [dynamic]
+  // Around the call: [modify] [static]
+  // Inside closure: [read] [static]
   doOneInout(c, &x)
 }
 
 // CHECK-LABEL: sil hidden @$s27access_enforcement_noescape17readBoxWriteInoutyyF : $@convention(thin) () -> () {
 // CHECK: [[PA1:%.*]] = partial_apply [callee_guaranteed]
 // CHECK: [[CVT:%.*]] = convert_escape_to_noescape [[PA1]] : $@callee_guaranteed () -> () to $@noescape @callee_guaranteed () -> ()
-// CHECK: [[ACCESS:%.*]] = begin_access [modify] [dynamic] %1 : $*Int
+// CHECK: [[ACCESS:%.*]] = begin_access [modify] [static] %1 : $*Int
 // CHECK: apply %{{.*}}([[CVT]], [[ACCESS]])
 // CHECK: end_access [[ACCESS]]
 // CHECK-LABEL: } // end sil function '$s27access_enforcement_noescape17readBoxWriteInoutyyF'
@@ -291,7 +292,7 @@ func readBoxWriteInout() {
 // closure #1 in readBoxWriteInout()
 // CHECK-LABEL: sil private @$s27access_enforcement_noescape17readBoxWriteInoutyyFyycfU_ : $@convention(thin) (@guaranteed { var Int }) -> () {
 // CHECK: [[ADDR:%.*]] = project_box %0 : ${ var Int }, 0
-// CHECK: [[ACCESS:%.*]] = begin_access [read] [dynamic] [[ADDR]] : $*Int
+// CHECK: [[ACCESS:%.*]] = begin_access [read] [static] [[ADDR]] : $*Int
 // CHECK: end_access [[ACCESS]] 
 // CHECK-LABEL: } // end sil function '$s27access_enforcement_noescape17readBoxWriteInoutyyFyycfU_'
 
@@ -417,19 +418,21 @@ func inoutWriteWriteInout(x: inout Int) {
 // inoutWriteWriteInout(x:)
 
 // Traps on boxed write + write inout.
-// Covered by Interpreter/enforce_exclusive_access.swift.
+// Boxed write + write inout. doOneInout never calls the closure, so static
+// enforcement is equivalent. A call that may conflict traps at run time:
+// covered by Interpreter/enforce_exclusive_access.swift.
 func writeBoxWriteInout() {
   var x = 3
   let c = { x = 42 }
-  // Around the call: [modify] [dynamic]
-  // Inside closure: [modify] [dynamic]
+  // Around the call: [modify] [static]
+  // Inside closure: [modify] [static]
   doOneInout(c, &x)
 }
 
 // CHECK-LABEL: sil hidden @$s27access_enforcement_noescape18writeBoxWriteInoutyyF : $@convention(thin) () -> () {
 // CHECK: [[PA1:%.*]] = partial_apply [callee_guaranteed]
 // CHECK: [[CVT:%.*]] = convert_escape_to_noescape [[PA1]] : $@callee_guaranteed () -> () to $@noescape @callee_guaranteed () -> ()
-// CHECK: [[ACCESS:%.*]] = begin_access [modify] [dynamic] %1 : $*Int
+// CHECK: [[ACCESS:%.*]] = begin_access [modify] [static] %1 : $*Int
 // CHECK: apply %{{.*}}([[CVT]], [[ACCESS]])
 // CHECK: end_access [[ACCESS]]
 // CHECK-LABEL: } // end sil function '$s27access_enforcement_noescape18writeBoxWriteInoutyyF'
@@ -437,7 +440,7 @@ func writeBoxWriteInout() {
 // closure #1 in writeBoxWriteInout()
 // CHECK-LABEL: sil private @$s27access_enforcement_noescape18writeBoxWriteInoutyyFyycfU_ : $@convention(thin) (@guaranteed { var Int }) -> () {
 // CHECK: [[ADDR:%.*]] = project_box %0 : ${ var Int }, 0
-// CHECK: [[ACCESS:%.*]] = begin_access [modify] [dynamic] [[ADDR]] : $*Int
+// CHECK: [[ACCESS:%.*]] = begin_access [modify] [static] [[ADDR]] : $*Int
 // CHECK: end_access [[ACCESS]]
 // CHECK-LABEL: } // end sil function '$s27access_enforcement_noescape18writeBoxWriteInoutyyFyycfU_'
 

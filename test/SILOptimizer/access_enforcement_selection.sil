@@ -118,7 +118,6 @@ bb0:
   return %9 : $()
 }
 // Test static enforcement of copied boxes.
-// FIXME: Oops... We make this dynamic.
 //
 // CHECK-LABEL: sil hidden [ossa] @copyBox : $@convention(thin) () -> () {
 // CHECK: bb0:
@@ -126,10 +125,10 @@ bb0:
 // CHECK:  [[ADR1:%.*]] = project_box [[BOX]] : ${ var Builtin.Int64 }, 0
 // CHECK:  [[CPY:%.*]] = copy_value [[BOX]] : ${ var Builtin.Int64 }
 // CHECK:  [[ADR2:%.*]] = project_box [[CPY]] : ${ var Builtin.Int64 }, 0
-// CHECK:  [[READ:%.*]] = begin_access [read] [dynamic] [[ADR2]] : $*Builtin.Int64
+// CHECK:  [[READ:%.*]] = begin_access [read] [static] [[ADR2]] : $*Builtin.Int64
 // CHECK:  %{{.*}} = load [trivial] [[READ]] : $*Builtin.Int64
 // CHECK:  end_access [[READ]] : $*Builtin.Int64
-// CHECK:  [[READ:%.*]] = begin_access [read] [dynamic] [[ADR1]] : $*Builtin.Int64
+// CHECK:  [[READ:%.*]] = begin_access [read] [static] [[ADR1]] : $*Builtin.Int64
 // CHECK:  %{{.*}} = load [trivial] [[READ]] : $*Builtin.Int64
 // CHECK:  end_access [[READ]] : $*Builtin.Int64
 // CHECK:  destroy_value [[CPY]] : ${ var Builtin.Int64 }
@@ -345,4 +344,493 @@ bb0(%0 : @guaranteed $@callee_guaranteed () -> (), %1 : $*Builtin.Int64):
   end_access %4 : $*Builtin.Int64
   %8 = tuple ()
   return %8 : $()
+}
+
+// A box passed to a directly called function that does not escape it.
+// rdar://157458037
+//
+// CHECK-LABEL: sil [ossa] @testBoxDirectCall : $@convention(thin) () -> Builtin.Int64 {
+// CHECK: begin_access [modify] [static]
+// CHECK: apply
+// CHECK: begin_access [read] [static]
+// CHECK-LABEL: } // end sil function 'testBoxDirectCall'
+sil [ossa] @testBoxDirectCall : $@convention(thin) () -> Builtin.Int64 {
+bb0:
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  store %lit to [trivial] %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %f = function_ref @boxDirectCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %call = apply %f(%borrow) : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %read = begin_access [read] [unknown] %proj : $*Builtin.Int64
+  %val = load [trivial] %read : $*Builtin.Int64
+  end_access %read : $*Builtin.Int64
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  return %val : $Builtin.Int64
+}
+
+// The callee forwards its box argument to another direct callee.
+//
+// CHECK-LABEL: sil private [ossa] @boxDirectCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [static]
+// CHECK-LABEL: } // end sil function 'boxDirectCallee'
+sil private [ossa] @boxDirectCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed ${ var Builtin.Int64 }):
+  %proj = project_box %0 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 2
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %f = function_ref @boxForwardedCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %call = apply %f(%0) : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %v = tuple ()
+  return %v : $()
+}
+
+// CHECK-LABEL: sil private [ossa] @boxForwardedCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [static]
+// CHECK-LABEL: } // end sil function 'boxForwardedCallee'
+sil private [ossa] @boxForwardedCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed ${ var Builtin.Int64 }):
+  %proj = project_box %0 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 3
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+// The box escapes before the direct call, so the callee's accesses are dynamic.
+//
+// CHECK-LABEL: sil [ossa] @testBoxEscapesBeforeDirectCall : $@convention(thin) () -> Builtin.Int64 {
+// CHECK: begin_access [read] [dynamic]
+// CHECK-LABEL: } // end sil function 'testBoxEscapesBeforeDirectCall'
+sil [ossa] @testBoxEscapesBeforeDirectCall : $@convention(thin) () -> Builtin.Int64 {
+bb0:
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  store %lit to [trivial] %proj : $*Builtin.Int64
+  %closureF = function_ref @boxEscapingClosure : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %copy = copy_value %borrow : ${ var Builtin.Int64 }
+  %closure = partial_apply [callee_guaranteed] %closureF(%copy) : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %escape = function_ref @takesEscapingClosure : $@convention(thin) (@owned @callee_guaranteed () -> ()) -> ()
+  %c1 = apply %escape(%closure) : $@convention(thin) (@owned @callee_guaranteed () -> ()) -> ()
+  %f = function_ref @boxCalleeAfterEscape : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %c2 = apply %f(%borrow) : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %read = begin_access [read] [unknown] %proj : $*Builtin.Int64
+  %val = load [trivial] %read : $*Builtin.Int64
+  end_access %read : $*Builtin.Int64
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  return %val : $Builtin.Int64
+}
+
+sil @takesEscapingClosure : $@convention(thin) (@owned @callee_guaranteed () -> ()) -> ()
+
+// CHECK-LABEL: sil private [ossa] @boxCalleeAfterEscape : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK-LABEL: } // end sil function 'boxCalleeAfterEscape'
+sil private [ossa] @boxCalleeAfterEscape : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed ${ var Builtin.Int64 }):
+  %proj = project_box %0 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 2
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+// CHECK-LABEL: sil private [ossa] @boxEscapingClosure : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK-LABEL: } // end sil function 'boxEscapingClosure'
+sil private [ossa] @boxEscapingClosure : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed ${ var Builtin.Int64 }):
+  %proj = project_box %0 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 3
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+// The callee escapes its box argument, so the direct call is an escape.
+//
+// CHECK-LABEL: sil [ossa] @testBoxCalleeEscapes : $@convention(thin) () -> Builtin.Int64 {
+// CHECK: begin_access [read] [dynamic]
+// CHECK-LABEL: } // end sil function 'testBoxCalleeEscapes'
+sil [ossa] @testBoxCalleeEscapes : $@convention(thin) () -> Builtin.Int64 {
+bb0:
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  store %lit to [trivial] %proj : $*Builtin.Int64
+  %f = function_ref @boxEscapingCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %call = apply %f(%borrow) : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %read = begin_access [read] [unknown] %proj : $*Builtin.Int64
+  %val = load [trivial] %read : $*Builtin.Int64
+  end_access %read : $*Builtin.Int64
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  return %val : $Builtin.Int64
+}
+
+// CHECK-LABEL: sil private [ossa] @boxEscapingCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK-LABEL: } // end sil function 'boxEscapingCallee'
+sil private [ossa] @boxEscapingCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed ${ var Builtin.Int64 }):
+  %closureF = function_ref @boxEscapingClosure : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %copy = copy_value %0 : ${ var Builtin.Int64 }
+  %closure = partial_apply [callee_guaranteed] %closureF(%copy) : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %escape = function_ref @takesEscapingClosure : $@convention(thin) (@owned @callee_guaranteed () -> ()) -> ()
+  %c1 = apply %escape(%closure) : $@convention(thin) (@owned @callee_guaranteed () -> ()) -> ()
+  %proj = project_box %0 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 2
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+// The callee forwards the box to a function whose box argument is dynamic
+// because it is also captured by an escaping closure. The access in progress
+// during the call must be dynamic.
+//
+// CHECK-LABEL: sil [ossa] @testBoxForwardedToDynamic : $@convention(thin) () -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK: apply
+// CHECK-LABEL: } // end sil function 'testBoxForwardedToDynamic'
+sil [ossa] @testBoxForwardedToDynamic : $@convention(thin) () -> () {
+bb0:
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  store %lit to [trivial] %proj : $*Builtin.Int64
+  %f = function_ref @boxForwardingToDynamic : $@convention(thin) (@inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> ()
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  %call = apply %f(%write, %borrow) : $@convention(thin) (@inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> ()
+  end_access %write : $*Builtin.Int64
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  %v = tuple ()
+  return %v : $()
+}
+
+sil private [ossa] @boxForwardingToDynamic : $@convention(thin) (@inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : $*Builtin.Int64, %1 : @guaranteed ${ var Builtin.Int64 }):
+  %f = function_ref @boxDynamicCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %call = apply %f(%1) : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %v = tuple ()
+  return %v : $()
+}
+
+// CHECK-LABEL: sil private [ossa] @boxDynamicCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK-LABEL: } // end sil function 'boxDynamicCallee'
+sil private [ossa] @boxDynamicCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed ${ var Builtin.Int64 }):
+  %proj = project_box %0 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 2
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+sil [ossa] @escapeBoxDynamicCallee : $@convention(thin) (@owned { var Builtin.Int64 }) -> @owned @callee_guaranteed () -> () {
+bb0(%0 : @owned ${ var Builtin.Int64 }):
+  %f = function_ref @boxDynamicCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %closure = partial_apply [callee_guaranteed] %f(%0) : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  return %closure : $@callee_guaranteed () -> ()
+}
+
+// A direct call that passes the same box twice escapes the box: accesses
+// through the two callee arguments can't be checked against each other.
+//
+// CHECK-LABEL: sil [ossa] @testBoxPassedTwice : $@convention(thin) () -> Builtin.Int64 {
+// CHECK: apply
+// CHECK: begin_access [read] [dynamic]
+// CHECK-LABEL: } // end sil function 'testBoxPassedTwice'
+sil [ossa] @testBoxPassedTwice : $@convention(thin) () -> Builtin.Int64 {
+bb0:
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  store %lit to [trivial] %proj : $*Builtin.Int64
+  %f = function_ref @boxTwiceCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }, @guaranteed { var Builtin.Int64 }) -> ()
+  %call = apply %f(%borrow, %borrow) : $@convention(thin) (@guaranteed { var Builtin.Int64 }, @guaranteed { var Builtin.Int64 }) -> ()
+  %read = begin_access [read] [unknown] %proj : $*Builtin.Int64
+  %val = load [trivial] %read : $*Builtin.Int64
+  end_access %read : $*Builtin.Int64
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  return %val : $Builtin.Int64
+}
+
+// CHECK-LABEL: sil private [ossa] @boxTwiceCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }, @guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK: begin_access [modify] [dynamic]
+// CHECK-LABEL: } // end sil function 'boxTwiceCallee'
+sil private [ossa] @boxTwiceCallee : $@convention(thin) (@guaranteed { var Builtin.Int64 }, @guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed ${ var Builtin.Int64 }, %1 : @guaranteed ${ var Builtin.Int64 }):
+  %proj0 = project_box %0 : ${ var Builtin.Int64 }, 0
+  %proj1 = project_box %1 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 2
+  %write0 = begin_access [modify] [unknown] %proj0 : $*Builtin.Int64
+  %write1 = begin_access [modify] [unknown] %proj1 : $*Builtin.Int64
+  assign %lit to %write1 : $*Builtin.Int64
+  end_access %write1 : $*Builtin.Int64
+  end_access %write0 : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+// A direct call that passes the box along with an in-progress access to it.
+// The callee may modify the box, which conflicts with the access only on some
+// paths. Only dynamic enforcement can check it.
+//
+// CHECK-LABEL: sil [ossa] @testBoxPassedWithAccess : $@convention(thin) (Builtin.Int1) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK: apply
+// CHECK-LABEL: } // end sil function 'testBoxPassedWithAccess'
+sil [ossa] @testBoxPassedWithAccess : $@convention(thin) (Builtin.Int1) -> () {
+bb0(%0 : $Builtin.Int1):
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  store %lit to [trivial] %proj : $*Builtin.Int64
+  %f = function_ref @boxAndInoutCallee : $@convention(thin) (Builtin.Int1, @inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> ()
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  %call = apply %f(%0, %write, %borrow) : $@convention(thin) (Builtin.Int1, @inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> ()
+  end_access %write : $*Builtin.Int64
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  %v = tuple ()
+  return %v : $()
+}
+
+// CHECK-LABEL: sil private [ossa] @boxAndInoutCallee : $@convention(thin) (Builtin.Int1, @inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK-LABEL: } // end sil function 'boxAndInoutCallee'
+sil private [ossa] @boxAndInoutCallee : $@convention(thin) (Builtin.Int1, @inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : $Builtin.Int1, %1 : $*Builtin.Int64, %2 : @guaranteed ${ var Builtin.Int64 }):
+  cond_br %0, bb1, bb2
+
+bb1:
+  %proj = project_box %2 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 2
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  br bb3
+
+bb2:
+  br bb3
+
+bb3:
+  %v = tuple ()
+  return %v : $()
+}
+
+// The callee always modifies the box, so the call always conflicts with the
+// access. DiagnoseStaticExclusivity reports it, so static enforcement is
+// equivalent.
+//
+// CHECK-LABEL: sil [ossa] @testBoxPassedWithConflictingAccess : $@convention(thin) () -> () {
+// CHECK: begin_access [modify] [static]
+// CHECK: apply
+// CHECK-LABEL: } // end sil function 'testBoxPassedWithConflictingAccess'
+sil [ossa] @testBoxPassedWithConflictingAccess : $@convention(thin) () -> () {
+bb0:
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  store %lit to [trivial] %proj : $*Builtin.Int64
+  %f = function_ref @boxAndInoutAlwaysModifies : $@convention(thin) (@inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> ()
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  %call = apply %f(%write, %borrow) : $@convention(thin) (@inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> ()
+  end_access %write : $*Builtin.Int64
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  %v = tuple ()
+  return %v : $()
+}
+
+// CHECK-LABEL: sil private [ossa] @boxAndInoutAlwaysModifies : $@convention(thin) (@inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [static]
+// CHECK-LABEL: } // end sil function 'boxAndInoutAlwaysModifies'
+sil private [ossa] @boxAndInoutAlwaysModifies : $@convention(thin) (@inout Builtin.Int64, @guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : $*Builtin.Int64, %1 : @guaranteed ${ var Builtin.Int64 }):
+  %proj = project_box %1 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 2
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+// A direct call that passes the box along with a non-escaping closure that
+// captures an address projected from it escapes the box. The closure may run
+// during the callee's access to the box, so its capture is also dynamic.
+//
+// CHECK-LABEL: sil [ossa] @testBoxPassedWithClosure : $@convention(thin) () -> () {
+// CHECK: apply
+// CHECK-LABEL: } // end sil function 'testBoxPassedWithClosure'
+sil [ossa] @testBoxPassedWithClosure : $@convention(thin) () -> () {
+bb0:
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  store %lit to [trivial] %proj : $*Builtin.Int64
+  %cf = function_ref @boxAliasClosure : $@convention(thin) (@inout_aliasable Builtin.Int64) -> ()
+  %pa = partial_apply [callee_guaranteed] %cf(%proj) : $@convention(thin) (@inout_aliasable Builtin.Int64) -> ()
+  %ne = convert_escape_to_noescape [not_guaranteed] %pa to $@noescape @callee_guaranteed () -> ()
+  %f = function_ref @boxAndClosureCallee : $@convention(thin) (@guaranteed @noescape @callee_guaranteed () -> (), @guaranteed { var Builtin.Int64 }) -> ()
+  %call = apply %f(%ne, %borrow) : $@convention(thin) (@guaranteed @noescape @callee_guaranteed () -> (), @guaranteed { var Builtin.Int64 }) -> ()
+  destroy_value %ne : $@noescape @callee_guaranteed () -> ()
+  destroy_value %pa : $@callee_guaranteed () -> ()
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  %v = tuple ()
+  return %v : $()
+}
+
+// CHECK-LABEL: sil private [ossa] @boxAndClosureCallee : $@convention(thin) (@guaranteed @noescape @callee_guaranteed () -> (), @guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK-LABEL: } // end sil function 'boxAndClosureCallee'
+sil private [ossa] @boxAndClosureCallee : $@convention(thin) (@guaranteed @noescape @callee_guaranteed () -> (), @guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed $@noescape @callee_guaranteed () -> (), %1 : @guaranteed ${ var Builtin.Int64 }):
+  %proj = project_box %1 : ${ var Builtin.Int64 }, 0
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  %call = apply %0() : $@noescape @callee_guaranteed () -> ()
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+// CHECK-LABEL: sil private [ossa] @boxAliasClosure : $@convention(thin) (@inout_aliasable Builtin.Int64) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK-LABEL: } // end sil function 'boxAliasClosure'
+sil private [ossa] @boxAliasClosure : $@convention(thin) (@inout_aliasable Builtin.Int64) -> () {
+bb0(%0 : $*Builtin.Int64):
+  %lit = integer_literal $Builtin.Int64, 3
+  %write = begin_access [modify] [unknown] %0 : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+// An escaping closure that captures the box, passed to a function that only
+// calls it. The closure does not escape, and no access is in progress at the
+// call, so static enforcement is equivalent.
+//
+// CHECK-LABEL: sil [ossa] @testBoxCapturedByNonEscapingClosure : $@convention(thin) () -> Builtin.Int64 {
+// CHECK: apply
+// CHECK: begin_access [read] [static]
+// CHECK-LABEL: } // end sil function 'testBoxCapturedByNonEscapingClosure'
+sil [ossa] @testBoxCapturedByNonEscapingClosure : $@convention(thin) () -> Builtin.Int64 {
+bb0:
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  store %lit to [trivial] %proj : $*Builtin.Int64
+  %cf = function_ref @boxCapturingClosure : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %copy = copy_value %borrow : ${ var Builtin.Int64 }
+  %closure = partial_apply [callee_guaranteed] %cf(%copy) : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> ()
+  %call = function_ref @callsEscapingClosure : $@convention(thin) (@guaranteed @callee_guaranteed () -> ()) -> ()
+  %c = apply %call(%closure) : $@convention(thin) (@guaranteed @callee_guaranteed () -> ()) -> ()
+  destroy_value %closure : $@callee_guaranteed () -> ()
+  %read = begin_access [read] [unknown] %proj : $*Builtin.Int64
+  %val = load [trivial] %read : $*Builtin.Int64
+  end_access %read : $*Builtin.Int64
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  return %val : $Builtin.Int64
+}
+
+// CHECK-LABEL: sil private [ossa] @boxCapturingClosure : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [static]
+// CHECK-LABEL: } // end sil function 'boxCapturingClosure'
+sil private [ossa] @boxCapturingClosure : $@convention(thin) (@guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed ${ var Builtin.Int64 }):
+  %proj = project_box %0 : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 2
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  assign %lit to %write : $*Builtin.Int64
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
+}
+
+sil hidden [ossa] @callsEscapingClosure : $@convention(thin) (@guaranteed @callee_guaranteed () -> ()) -> () {
+bb0(%0 : @guaranteed $@callee_guaranteed () -> ()):
+  %1 = apply %0() : $@callee_guaranteed () -> ()
+  %v = tuple ()
+  return %v : $()
+}
+
+// The closure that captures the box is called with a non-escaping closure
+// that captures an address within the box. Accesses through the two captures
+// can't be checked against each other statically.
+//
+// CHECK-LABEL: sil [ossa] @testBoxCapturingClosureCalledWithAlias : $@convention(thin) () -> () {
+// CHECK: begin_access [read] [dynamic]
+// CHECK-LABEL: } // end sil function 'testBoxCapturingClosureCalledWithAlias'
+sil [ossa] @testBoxCapturingClosureCalledWithAlias : $@convention(thin) () -> () {
+bb0:
+  %box = alloc_box ${ var Builtin.Int64 }, var, name "x"
+  %borrow = begin_borrow [lexical] [var_decl] %box : ${ var Builtin.Int64 }
+  %proj = project_box %borrow : ${ var Builtin.Int64 }, 0
+  %lit = integer_literal $Builtin.Int64, 1
+  store %lit to [trivial] %proj : $*Builtin.Int64
+  %cf = function_ref @boxCapturingClosureWithArg : $@convention(thin) (@guaranteed @noescape @callee_guaranteed () -> (), @guaranteed { var Builtin.Int64 }) -> ()
+  %copy = copy_value %borrow : ${ var Builtin.Int64 }
+  %closure = partial_apply [callee_guaranteed] %cf(%copy) : $@convention(thin) (@guaranteed @noescape @callee_guaranteed () -> (), @guaranteed { var Builtin.Int64 }) -> ()
+  %af = function_ref @boxAliasClosure : $@convention(thin) (@inout_aliasable Builtin.Int64) -> ()
+  %pa = partial_apply [callee_guaranteed] %af(%proj) : $@convention(thin) (@inout_aliasable Builtin.Int64) -> ()
+  %ne = convert_escape_to_noescape [not_guaranteed] %pa to $@noescape @callee_guaranteed () -> ()
+  %c = apply %closure(%ne) : $@callee_guaranteed (@guaranteed @noescape @callee_guaranteed () -> ()) -> ()
+  destroy_value %ne : $@noescape @callee_guaranteed () -> ()
+  destroy_value %pa : $@callee_guaranteed () -> ()
+  destroy_value %closure : $@callee_guaranteed (@guaranteed @noescape @callee_guaranteed () -> ()) -> ()
+  %read = begin_access [read] [unknown] %proj : $*Builtin.Int64
+  %val = load [trivial] %read : $*Builtin.Int64
+  end_access %read : $*Builtin.Int64
+  end_borrow %borrow : ${ var Builtin.Int64 }
+  destroy_value %box : ${ var Builtin.Int64 }
+  %v = tuple ()
+  return %v : $()
+}
+
+// CHECK-LABEL: sil private [ossa] @boxCapturingClosureWithArg : $@convention(thin) (@guaranteed @noescape @callee_guaranteed () -> (), @guaranteed { var Builtin.Int64 }) -> () {
+// CHECK: begin_access [modify] [dynamic]
+// CHECK-LABEL: } // end sil function 'boxCapturingClosureWithArg'
+sil private [ossa] @boxCapturingClosureWithArg : $@convention(thin) (@guaranteed @noescape @callee_guaranteed () -> (), @guaranteed { var Builtin.Int64 }) -> () {
+bb0(%0 : @guaranteed $@noescape @callee_guaranteed () -> (), %1 : @guaranteed ${ var Builtin.Int64 }):
+  %proj = project_box %1 : ${ var Builtin.Int64 }, 0
+  %write = begin_access [modify] [unknown] %proj : $*Builtin.Int64
+  %call = apply %0() : $@noescape @callee_guaranteed () -> ()
+  end_access %write : $*Builtin.Int64
+  %v = tuple ()
+  return %v : $()
 }
