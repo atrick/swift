@@ -96,7 +96,7 @@ private func tryConvertBoxesToStack(in function: Function, isMandatory: Bool,
   var promotableBoxes = Array<(AllocBoxInst, Flags)>()
   var functionsToSpecialize = FunctionSpecializations(isMandatory: isMandatory)
 
-  findPromotableBoxes(in: function, &promotableBoxes, &functionsToSpecialize)
+  findPromotableBoxes(in: function, isMandatory: isMandatory, &promotableBoxes, &functionsToSpecialize)
 
   functionsToSpecialize.createSpecializedFunctions(context)
 
@@ -124,13 +124,16 @@ private func tryConvertBoxesToStack(in function: Function, isMandatory: Bool,
   return functionsToSpecialize
 }
 
-private func findPromotableBoxes(in function: Function,
+private func findPromotableBoxes(in function: Function, isMandatory: Bool,
                                  _ promotableBoxes: inout Array<(AllocBoxInst, Flags)>,
                                  _ functionsToSpecialize: inout FunctionSpecializations
 ) {
+  // The mandatory pass makes the accesses of a promoted box static, and DiagnoseStaticExclusivity
+  // checks them after promotion. Only promote a box if that is equivalent to dynamic enforcement.
+  let accessSummary = isMandatory ? BoxAccessSummary() : nil
   for inst in function.instructions {
     if let allocBox = inst as? AllocBoxInst {
-      if let (promotableArgs, flags) = canPromote(allocBox: allocBox) {
+      if let (promotableArgs, flags) = canPromote(allocBox: allocBox, accessSummary) {
         promotableBoxes.append((allocBox, flags))
         functionsToSpecialize.add(promotableArguments: promotableArgs)
       }
@@ -138,14 +141,28 @@ private func findPromotableBoxes(in function: Function,
   }
 }
 
+/// Promotion is mandatory for noncopyable variables, because the move-only checker runs after
+/// MandatoryAllocBoxToStack and requires it.
+///
+/// FIXME: DiagnoseStaticExclusivity may then reject a conflict on a noncopyable variable that only
+/// happens on some paths (test/SILOptimizer/exclusivity_static_diagnostics_noncopyable_box.swift).
+/// Running the new move checker before MandatoryAllocBoxToStack would remove this exception.
+private func isNoncopyable(_ allocBox: AllocBoxInst) -> Bool {
+  allocBox.type.getBoxFields(in: allocBox.parentFunction)[0].isMoveOnly
+}
+
 private typealias Flags = (isLexical: Bool, isFromVarDecl: Bool)
 
-private func canPromote(allocBox: AllocBoxInst) -> (promotableArguments: [FunctionArgument], flags: Flags)? {
+private func canPromote(allocBox: AllocBoxInst, _ accessSummary: BoxAccessSummary?
+) -> (promotableArguments: [FunctionArgument], flags: Flags)? {
   // For simplicity we only support boxes with a single field. This is okay because SILGen only generates
   // such kind of boxes.
   guard allocBox.type.getBoxFields(in: allocBox.parentFunction).count == 1 else {
     return nil
   }
+  // In the mandatory pass, only promote a box if static checking of its accesses is equivalent to
+  // dynamic enforcement.
+  var accessCheck = isNoncopyable(allocBox) ? nil : accessSummary.map { BoxAccessCheck($0) }
 
   var argumentsToPromote = Array<FunctionArgument>()
   var flags = (isLexical: false, isFromVarDecl: false)
@@ -159,8 +176,9 @@ private func canPromote(allocBox: AllocBoxInst) -> (promotableArguments: [Functi
     for use in value.uses {
       // Note: all instructions which are handled here must also be handled in `FunctionSpecializations.rewriteUses`!
       switch use.instruction {
-      case is ProjectBoxInst, is DestroyValueInst,
-           is EndBorrowInst, is DebugValueInst, is DeallocStackInst:
+      case let projectBox as ProjectBoxInst:
+        accessCheck?.addProjection(projectBox)
+      case is DestroyValueInst, is EndBorrowInst, is DebugValueInst, is DeallocStackInst:
         break
       case let deallocBox as DeallocBoxInst where deallocBox.parentFunction == allocBox.parentFunction:
         break
@@ -169,16 +187,20 @@ private func canPromote(allocBox: AllocBoxInst) -> (promotableArguments: [Functi
         flags.isFromVarDecl = flags.isFromVarDecl || beginBorrow.isFromVarDecl
         fallthrough
       case is MarkUninitializedInst, is CopyValueInst, is MoveValueInst:
-        worklist.pushIfNotVisited(use.instruction as! SingleValueInstruction)
+        let result = use.instruction as! SingleValueInstruction
+        accessCheck?.addForwarding(of: value, to: result)
+        worklist.pushIfNotVisited(result)
       case let apply as ApplySite:
         if apply.isCallee(operand: use) {
           // Calling the closure does not escape the closure value.
+          accessCheck?.addClosureCall(apply, operand: use)
           break
         }
         guard let callee = apply.getSpecializableCallee() else {
           return nil
         }
         let calleeArg = apply.calleeArgument(of: use, in: callee)!
+        accessCheck?.addArgument(apply, operand: use, calleeArg: calleeArg)
         // Continue checking the box (or closure) value in the callee.
         worklist.pushIfNotVisited(calleeArg)
 
@@ -195,7 +217,175 @@ private func canPromote(allocBox: AllocBoxInst) -> (promotableArguments: [Functi
       }
     }
   }
+  if let accessCheck, !accessCheck.isStaticallyCheckable {
+    return nil
+  }
   return (argumentsToPromote, flags)
+}
+
+/// Decides whether the accesses to a box can be checked statically once the mandatory pass promotes
+/// it. `canPromote` reports the uses it discovers while walking the box, the callees it is passed
+/// to, and the closures that capture it, in every function the walk visits.
+///
+/// Promotion passes the box's address to its callees and to the closures that capture it as
+/// `@inout_aliasable`, and makes the box's accesses static. DiagnoseStaticExclusivity then treats
+/// those captures as non-escaping: an access that *may* happen during a call that passes the box or
+/// closure conflicts with an access in progress at that call.
+///
+/// Static enforcement must be equivalent to dynamic enforcement: it may only reject a program that
+/// dynamic enforcement rejects every time it runs. So the box is only promoted if, at every call it
+/// reaches:
+/// 1. the box is accessed during the call either on all paths or on no paths
+///    (`BoxAccessSummary`). Then the may rule reports exactly the conflicts that dynamic
+///    enforcement reports every time the call executes, whatever access is in progress at the call.
+///    SIL requires the same accesses to be in progress on every path to an instruction, so an
+///    access that encloses the call encloses it whenever the call executes.
+/// 2. the box doesn't reach the call through two captures (`addReachingUse`).
+private struct BoxAccessCheck {
+  private let summary: BoxAccessSummary
+
+  /// For each closure value that captures the box, the closure function's box argument. This
+  /// includes closure arguments in the callees that a closure is passed to.
+  private var closureCaptures = [HashableValue: FunctionArgument]()
+
+  /// The number of captures of the box that reach each call, in any function, and whether any of
+  /// them is promoted. See `addReachingUse`.
+  private var reachingUses = [Instruction: (count: Int, isPromoted: Bool)]()
+
+  /// False once a call is found where condition 1 doesn't hold, or a use that isn't supported, such
+  /// as a closure captured by another closure.
+  private var isCheckable = true
+
+  init(_ summary: BoxAccessSummary) {
+    self.summary = summary
+  }
+
+  /// A projection of the box. Record the calls that its address reaches directly or through a
+  /// non-escaping closure that captures it. An address within an access, such as an `inout`
+  /// argument, is an access in progress at the call, not a capture.
+  mutating func addProjection(_ projectBox: ProjectBoxInst) {
+    var addresses: [Value] = [projectBox]
+    while let address = addresses.popLast() {
+      for use in address.uses {
+        switch use.instruction {
+        case let mark as MarkUnresolvedNonCopyableValueInst:
+          addresses.append(mark)
+        case let partialApply as PartialApplyInst:
+          addReachingUse(partialApply, isPromoted: false)
+          for call in partialApply.callsOfClosure {
+            addReachingUse(call, isPromoted: false)
+          }
+        case let apply as ApplySite:
+          addReachingUse(apply, isPromoted: false)
+        default:
+          // Accesses, and other uses such as initialization, are not captures.
+          break
+        }
+      }
+    }
+  }
+
+  /// `result` forwards `value`: a copy, borrow, move or `mark_uninitialized`.
+  mutating func addForwarding(of value: Value, to result: Value) {
+    if let capture = closureCaptures[value.hashable] {
+      closureCaptures[result.hashable] = capture
+    }
+  }
+
+  /// `apply` calls a closure that captures the box, which is `operand`.
+  mutating func addClosureCall(_ apply: ApplySite, operand: Operand) {
+    addReachingUse(apply, isPromoted: true)
+    guard let capture = closureCaptures[operand.value.hashable], apply is FullApplySite else {
+      isCheckable = false
+      return
+    }
+    require(summary.boxArgument(capture).paths)
+  }
+
+  /// `apply` passes the box, or a closure that captures it, as `operand` to `calleeArg`.
+  mutating func addArgument(_ apply: ApplySite, operand: Operand, calleeArg: FunctionArgument) {
+    addReachingUse(apply, isPromoted: true)
+    if operand.value.type.isBox {
+      if let partialApply = apply as? PartialApplyInst {
+        // A closure that captures the box. Its accesses happen at the calls that use it.
+        closureCaptures[partialApply.hashable] = calleeArg
+        return
+      }
+      require(summary.boxArgument(calleeArg).paths)
+      return
+    }
+    // A closure that captures the box. A closure captured by another closure is not supported.
+    guard let capture = closureCaptures[operand.value.hashable], apply is FullApplySite else {
+      isCheckable = false
+      return
+    }
+    // The calls of the closure in the callee are reported as uses of `calleeArg`.
+    closureCaptures[calleeArg.hashable] = capture
+
+    // DiagnoseStaticExclusivity treats a closure argument as accessed at the call, whether or not the
+    // callee calls it. The access happens on all paths only if the callee always calls it.
+    switch summary.boxArgument(capture).paths {
+    case .noPaths:
+      break
+    case .allPaths:
+      require(summary.closureArgumentInvocation(calleeArg))
+    case .undecided:
+      require(.undecided)
+    }
+  }
+
+  /// Return true if the accesses to the box can be checked statically once it is promoted. Must be
+  /// called after all uses have been reported.
+  var isStaticallyCheckable: Bool {
+    isCheckable && !reachingUses.values.contains { $0.count > 1 && $0.isPromoted }
+  }
+
+  /// Condition 1: the box is accessed during a call on all paths or on no paths.
+  private mutating func require(_ paths: PathSummary) {
+    if paths == .undecided {
+      isCheckable = false
+    }
+  }
+
+  private mutating func addReachingUse(_ apply: ApplySite, isPromoted: Bool) {
+    addReachingUse(apply as Instruction, isPromoted: isPromoted)
+  }
+
+  /// Condition 2: the box must not reach the same call through two captures, if one of them is
+  /// promoted (a box argument or a closure that captures the box).
+  ///
+  /// DiagnoseStaticExclusivity checks a call against the accesses in progress in the caller. It
+  /// never checks two arguments of the same call against each other: inside the callee, two
+  /// arguments are distinct storage. For example:
+  ///
+  ///     func test() {
+  ///       var x = 0
+  ///       func outer(_ c: () -> ()) {    // captures x: outer(c, x)
+  ///         modify(&x) { c() }           // modifies x through outer's capture, calls c meanwhile
+  ///       }
+  ///       outer { x += 1 }               // c also captures x
+  ///     }
+  ///
+  /// Once x is promoted, outer's capture and c's capture are both `@inout_aliasable` addresses of x
+  /// and their accesses are static. The call to outer has no access in progress in test, and in
+  /// outer, `c` is an argument whose captures can't be seen. So the conflict is neither diagnosed nor
+  /// checked at run time. As a box, both accesses are dynamic and the conflict traps.
+  ///
+  /// For closures that are non-escaping in the language, this can't happen because of the
+  /// Non-Escaping Recursion Restriction (SE-0176): a non-escaping closure may not be invoked during a
+  /// non-escaping closure that captures the same variable. DiagnoseInvalidEscapingCaptures diagnoses
+  /// it before DiagnoseStaticExclusivity runs, conservatively, by rejecting a call to a non-escaping
+  /// function parameter that passes a non-escaping function parameter. That restriction is what lets
+  /// DiagnoseStaticExclusivity ignore aliasing between arguments, and why two captures of the box's
+  /// address alone are fine. It doesn't apply to local functions and escaping closures, whose
+  /// captures are boxes, so it doesn't apply to the captures this pass promotes. Not promoting a box
+  /// that reaches a call twice stands in for it.
+  private mutating func addReachingUse(_ instruction: Instruction, isPromoted: Bool) {
+    var reach = reachingUses[instruction, default: (count: 0, isPromoted: false)]
+    reach.count += 1
+    reach.isPromoted = reach.isPromoted || isPromoted
+    reachingUses[instruction] = reach
+  }
 }
 
 /// Utility for specializing functions by promoting box arguments to `@inout_aliasable` address arguments.
