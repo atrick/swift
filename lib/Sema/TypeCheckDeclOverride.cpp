@@ -27,6 +27,7 @@
 #include "swift/AST/Expr.h"
 #include "swift/AST/GenericEnvironment.h"
 #include "swift/AST/GenericSignature.h"
+#include "swift/AST/LifetimeDependence.h"
 #include "swift/AST/NameLookupRequests.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/TypeCheckRequests.h"
@@ -1941,6 +1942,45 @@ checkOverrideAvailability(ValueDecl *override, ValueDecl *base) {
   return result;
 }
 
+/// Determine whether an override has the same lifetime dependencies as the
+/// overridden declaration.
+///
+/// A caller dispatching through the base relies on the base's dependencies, so
+/// an override with a dependency that the base lacks can lead to
+/// use-after-free. An override with fewer dependencies is safe, but is also
+/// rejected; allowing it later would be source compatible.
+///
+/// The base's type is substituted with the subclass's generic arguments, so a
+/// dependency whose target becomes Escapable is ignored, as in override type
+/// matching.
+static bool overrideLifetimesMatch(AbstractFunctionDecl *overrideFn,
+                                   AbstractFunctionDecl *baseFn) {
+  Type overrideType = overrideFn->getMethodInterfaceType();
+  Type baseType = baseFn->getMethodInterfaceType();
+  if (overrideType->hasError() || baseType->hasError())
+    return true;
+
+  if (baseType->hasTypeParameter()) {
+    auto subs = SubstitutionMap::getOverrideSubstitutions(baseFn, overrideFn);
+    baseType = baseType.subst(subs);
+  }
+  // Map into the override's generic environment so that the remaining type
+  // parameters' Escapable-ness is known.
+  auto *overrideFnType = overrideFn->mapTypeIntoEnvironment(overrideType)
+                             ->castTo<AnyFunctionType>();
+  auto *baseFnType =
+      overrideFn->mapTypeIntoEnvironment(baseType)->castTo<AnyFunctionType>();
+
+  // Override matching requires the same parameters. Accessors match through
+  // their storage, which has the same indices.
+  ASSERT(overrideFnType->getNumParams() == baseFnType->getNumParams());
+
+  LifetimeDependentInterface overrideInterface(overrideFn, overrideFnType);
+  LifetimeDependentInterface baseInterface(baseFn, baseFnType);
+  return overrideInterface.canConvertTo(baseInterface) &&
+         baseInterface.canConvertTo(overrideInterface);
+}
+
 static bool checkSingleOverride(ValueDecl *override, ValueDecl *base) {
   // This can happen with circular inheritance.
   // FIXME: This shouldn't be possible once name lookup goes through the
@@ -2180,6 +2220,13 @@ static bool checkSingleOverride(ValueDecl *override, ValueDecl *base) {
         !cast<AbstractFunctionDecl>(base)->hasAsync()) {
       diags.diagnose(override, diag::override_with_more_effects, override,
                      "async");
+      diags.diagnose(base, diag::overridden_here);
+    }
+
+    // The override's lifetime dependencies must match the base's.
+    if (!overrideLifetimesMatch(overrideFn, baseFn)) {
+      diags.diagnose(override, diag::override_lifetime_dependence_mismatch,
+                     override);
       diags.diagnose(base, diag::overridden_here);
     }
 

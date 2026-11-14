@@ -1,0 +1,27 @@
+// swift-interface-format-version: 1.0
+// swift-module-flags: -module-name LifetimeOverride -enable-experimental-feature Lifetimes
+
+// RUN: %target-typecheck-verify-swift -enable-experimental-feature Lifetimes
+
+// REQUIRES: swift_feature_Lifetimes
+
+// rdar://192737567: A class override's lifetime dependencies must match the
+// overridden declaration's, also in a swiftinterface.
+
+import Swift
+
+public struct NE : ~Swift.Escapable {
+  @_lifetime(immortal) public init()
+}
+
+public class Base {
+  @_lifetime(copy ne) public func copying(_ ne: NE) -> NE // expected-note {{overridden declaration is here}}
+  @_lifetime(copy ne) public func matching(_ ne: NE) -> NE
+  public init()
+}
+
+public class Derived : Base {
+  @_lifetime(borrow ne) override public func copying(_ ne: NE) -> NE // expected-error {{instance method 'copying' has a lifetime dependence that does not match the overridden declaration}}
+  @_lifetime(copy ne) override public func matching(_ ne: NE) -> NE
+  override public init()
+}

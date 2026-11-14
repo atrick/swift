@@ -50,6 +50,18 @@ static bool isTypeUnknown(Type t) {
   return false;
 }
 
+/// Get the type of a function's result dependence target: the yielded type of
+/// a coroutine, otherwise the result type.
+static Type getResultOrYieldType(AnyFunctionType *fnType) {
+  if (fnType->isCoroutine()) {
+    // TODO: Extend tracking to coroutines with multiple yields and / or
+    // yields and results.
+    ASSERT(fnType->getYields().size() == 1);
+    return fnType->getYields().front().getType();
+  }
+  return fnType->getResult();
+}
+
 std::string LifetimeDescriptor::getString() const {
   switch (kind) {
   case DescriptorKind::Named: {
@@ -633,15 +645,8 @@ public:
         isImplicit(false),
         isInit(false),
         hasUnsafeNonEscapableResult(false) {
-    if (funcType->isCoroutine()) {
-      assert(funcType->getYields().size() == 1);
-      resultTy = GenericEnvironment::mapTypeIntoEnvironment(
-        env, funcType->getYields().front().getType());
-    } else {
-      resultTy = 
-          GenericEnvironment::mapTypeIntoEnvironment(env,
-                                                     funcType->getResult());
-    }
+    resultTy = GenericEnvironment::mapTypeIntoEnvironment(
+        env, getResultOrYieldType(funcType));
   }
 
   std::optional<llvm::ArrayRef<LifetimeDependenceInfo>>
@@ -2280,10 +2285,11 @@ Type LifetimeDependentInterface::getSourceOrTargetType(unsigned index) const {
     return interface->getParams()[index].getPlainType();
   }
   if (index == numParams) {
-    return implicitSelfType ? *implicitSelfType : interface->getResult();
+    return implicitSelfType ? *implicitSelfType
+                            : getResultOrYieldType(interface);
   }
   if (implicitSelfType && index == numParams + 1) {
-    return interface->getResult();
+    return getResultOrYieldType(interface);
   }
   llvm_unreachable("Invalid lifetime source or target index.");
 }
