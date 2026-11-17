@@ -17,7 +17,9 @@ class Base {
   @_lifetime(copy ne) func matching(_ ne: NE) -> NE { ne }
   @_lifetime(copy a) func twoParams(_ a: NE, _ b: NE) -> NE { a } // expected-note {{overridden declaration is here}}
   @_lifetime(immortal) func immortal(_ ne: NE) -> NE { NE() } // expected-note {{overridden declaration is here}}
-  @_lifetime(copy ne) class func classMethod(_ ne: NE) -> NE { ne } // expected-note {{potential overridden class method 'classMethod' here}}
+  @_lifetime(copy ne) class func classMethod(_ ne: NE) -> NE { ne } // expected-note {{overridden declaration is here}}
+  @_lifetime(copy ne) class func shadowed(_ ne: NE) -> NE { ne } // expected-note 2 {{overridden declaration is here}}
+  @_lifetime(copy ne) static func staticShadowed(_ ne: NE) -> NE { ne } // expected-note 3 {{overridden declaration is here}}
   @_lifetime(a: copy b) func inoutTarget(_ a: inout NE, _ b: NE) { a = b } // expected-note {{overridden declaration is here}}
   @_lifetime(a: copy b) func inoutMatching(_ a: inout NE, _ b: NE) { a = b }
   func inferred(_ ne: NE) -> NE { ne }
@@ -57,8 +59,11 @@ class Derived: Base {
   @_lifetime(copy ne) override func matching(_ ne: NE) -> NE { ne }
   @_lifetime(copy a, copy b) override func twoParams(_ a: NE, _ b: NE) -> NE { a } // expected-error {{instance method 'twoParams' has a lifetime dependence that does not match the overridden declaration}}
   @_lifetime(copy ne) override func immortal(_ ne: NE) -> NE { ne } // expected-error {{instance method 'immortal' has a lifetime dependence that does not match the overridden declaration}}
-  // Lifetime dependencies of static methods are part of the compared type.
-  @_lifetime(borrow ne) override class func classMethod(_ ne: NE) -> NE { ne } // expected-error {{method does not override any method from its superclass}}
+  @_lifetime(borrow ne) override class func classMethod(_ ne: NE) -> NE { ne } // expected-error {{class method 'classMethod' has a lifetime dependence that does not match the overridden declaration}}
+  // A method that differs only in its lifetime dependencies cannot shadow the
+  // base method.
+  @_lifetime(borrow ne) class func shadowed(_ ne: NE) -> NE { ne } // expected-error {{overriding declaration requires an 'override' keyword}} expected-error {{class method 'shadowed' has a lifetime dependence that does not match the overridden declaration}}
+  @_lifetime(borrow ne) static func staticShadowed(_ ne: NE) -> NE { ne } // expected-error {{overriding declaration requires an 'override' keyword}} expected-error {{static method 'staticShadowed' has a lifetime dependence that does not match the overridden declaration}} expected-error {{cannot override static method}}
   @_lifetime(a: borrow b) override func inoutTarget(_ a: inout NE, _ b: NE) {} // expected-error {{instance method 'inoutTarget' has a lifetime dependence that does not match the overridden declaration}}
   @_lifetime(a: copy b) override func inoutMatching(_ a: inout NE, _ b: NE) { a = b }
   @_lifetime(copy ne) override func inferred(_ ne: NE) -> NE { ne }
@@ -94,7 +99,7 @@ class Derived: Base {
 // dependency whose target becomes Escapable is ignored.
 class GenericBase<T: ~Escapable> {
   @_lifetime(copy t) func method(_ t: T) -> T { t } // expected-note 3 {{overridden declaration is here}}
-  @_lifetime(copy t) class func classMethod(_ t: T) -> T { t }
+  @_lifetime(copy t) class func classMethod(_ t: T) -> T { t } // expected-note {{overridden declaration is here}}
   @_lifetime(copy u) func genericMethod<U: ~Escapable>(_ t: T, _ u: U) -> U { u } // expected-note {{overridden declaration is here}}
 }
 
@@ -107,6 +112,7 @@ class EscapableArgument: GenericBase<Int> {
 
 class NonEscapableArgument: GenericBase<NE> {
   @_lifetime(borrow t) override func method(_ t: NE) -> NE { t } // expected-error {{instance method 'method' has a lifetime dependence that does not match the overridden declaration}}
+  @_lifetime(borrow t) override class func classMethod(_ t: NE) -> NE { t } // expected-error {{class method 'classMethod' has a lifetime dependence that does not match the overridden declaration}}
 }
 
 class NonEscapableArgumentMatching: GenericBase<NE> {
@@ -144,10 +150,12 @@ class AccessorKindDerived: AccessorKindBase {
 // A restated protocol requirement must have the same lifetime dependencies.
 protocol P1 {
   @_lifetime(copy ne) func method(_ ne: NE) -> NE // expected-note {{overridden declaration is here}}
+  @_lifetime(copy ne) static func staticMethod(_ ne: NE) -> NE // expected-note {{overridden declaration is here}}
   @_lifetime(copy ne) func matching(_ ne: NE) -> NE
 }
 
 protocol P2: P1 {
   @_lifetime(borrow ne) func method(_ ne: NE) -> NE // expected-error {{instance method 'method' has a lifetime dependence that does not match the overridden declaration}}
+  @_lifetime(borrow ne) static func staticMethod(_ ne: NE) -> NE // expected-error {{static method 'staticMethod' has a lifetime dependence that does not match the overridden declaration}}
   @_lifetime(copy ne) func matching(_ ne: NE) -> NE
 }

@@ -44,6 +44,13 @@ static void adjustFunctionTypeForOverride(Type &type) {
   auto fnType = type->castTo<AnyFunctionType>();
   auto extInfo = fnType->getExtInfo();
   extInfo = extInfo.withThrows(false, Type());
+  // Drop lifetime dependencies, so that a declaration that differs only in
+  // its dependencies is an override rather than a new declaration. The
+  // dependencies of an override are checked separately (see
+  // overrideLifetimesMatch). Only static methods carry dependencies here;
+  // instance method dependencies are on the dropped 'Self' clause.
+  extInfo =
+      extInfo.withLifetimeDependencies(ArrayRef<LifetimeDependenceInfo>());
   if (!fnType->getExtInfo().isEqualTo(extInfo, useClangTypes(fnType)))
     type = fnType->withExtInfo(extInfo);
 }
