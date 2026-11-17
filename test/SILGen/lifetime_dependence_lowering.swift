@@ -111,3 +111,29 @@ struct AddressableForDeps {
                 other: AddressableForDeps) -> Foo {}
 }
 
+
+struct ImmortalFoo: ~Escapable {
+  @_lifetime(immortal) init() {}
+}
+
+// A synthesized accessor has the result dependence of the accessor that it
+// wraps.
+class SynthesizedAccessors {
+  // The getter is synthesized from the '_read'.
+  // CHECK-LABEL: sil{{.*}} @$s{{.*}}20SynthesizedAccessorsC8immortal{{.*}}vg : $
+  // CHECK-SAME: -> @lifetime(immortal) @owned ImmortalFoo
+  var immortal: ImmortalFoo { @_lifetime(immortal) _read { yield ImmortalFoo() } }
+
+  // CHECK-LABEL: sil{{.*}} @$s{{.*}}20SynthesizedAccessorsC{{.*}}4copy{{.*}}cig : $
+  // CHECK-SAME: -> @lifetime(copy 0) @owned ImmortalFoo
+  subscript(copy ne: ImmortalFoo) -> ImmortalFoo {
+    @_lifetime(copy ne) _read { yield ne }
+  }
+
+  // The '_read' is synthesized from the getter.
+  // CHECK-LABEL: sil{{.*}} @$s{{.*}}20SynthesizedAccessorsC{{.*}}8borrowed{{.*}}cir : $
+  // CHECK-SAME: -> @lifetime(copy 0) @yields @guaranteed ImmortalFoo
+  @_borrowed subscript(borrowed ne: ImmortalFoo) -> ImmortalFoo {
+    @_lifetime(copy ne) get { ne }
+  }
+}

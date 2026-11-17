@@ -808,31 +808,6 @@ Expr *PatternBindingCheckedAndContextualizedInitRequest::evaluate(
   return binding->getInit(i);
 }
 
-static std::optional<AccessorKind>
-directAccessorKindForReadImpl(ReadImplKind reader) {
-  switch (reader) {
-  case ReadImplKind::Stored:
-  case ReadImplKind::Inherited:
-    return std::nullopt;
-
-  case ReadImplKind::Get:
-    return AccessorKind::Get;
-
-  case ReadImplKind::Address:
-    return AccessorKind::Address;
-
-  case ReadImplKind::Read:
-    return AccessorKind::Read;
-
-  case ReadImplKind::YieldingBorrow:
-    return AccessorKind::YieldingBorrow;
-
-  case ReadImplKind::Borrow:
-    return AccessorKind::Borrow;
-  }
-  llvm_unreachable("bad impl kind");
-}
-
 bool
 IsGetterMutatingRequest::evaluate(Evaluator &evaluator,
                                   AbstractStorageDecl *storage) const {
@@ -869,7 +844,7 @@ IsGetterMutatingRequest::evaluate(Evaluator &evaluator,
   if (isa<ProtocolDecl>(storageDC))
     return checkMutability(AccessorKind::Get);
 
-  auto accessor = directAccessorKindForReadImpl(storage->getReadImpl());
+  auto accessor = getAccessorKindForReadImpl(storage->getReadImpl());
   if (!accessor)
     return false;
 
@@ -914,7 +889,7 @@ static void diagnoseReadWriteMutatingnessMismatch(
         kind, /*article=*/false, /*legacy=*/hasCoroutineAccessorFeature);
   };
 
-  auto readerAccessor = directAccessorKindForReadImpl(storage->getReadImpl());
+  auto readerAccessor = getAccessorKindForReadImpl(storage->getReadImpl());
   StringRef readerAccessorName =
       readerAccessor.has_value() ? nameForAccessor(*readerAccessor)
                                  : "the inherited accessor";

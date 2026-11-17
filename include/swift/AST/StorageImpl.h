@@ -21,6 +21,8 @@
 #include "swift/AST/AccessorKind.h"
 #include "swift/Basic/Range.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <optional>
 
 namespace llvm {
 class StringRef;
@@ -315,6 +317,28 @@ enum class ReadImplKind {
   Borrow,
 };
 enum { NumReadImplKindBits = 4 };
+
+/// The kind of accessor that directly implements reads for the given read
+/// implementation, if there is one.
+inline std::optional<AccessorKind>
+getAccessorKindForReadImpl(ReadImplKind reader) {
+  switch (reader) {
+  case ReadImplKind::Stored:
+  case ReadImplKind::Inherited:
+    return std::nullopt;
+  case ReadImplKind::Get:
+    return AccessorKind::Get;
+  case ReadImplKind::Address:
+    return AccessorKind::Address;
+  case ReadImplKind::Read:
+    return AccessorKind::Read;
+  case ReadImplKind::YieldingBorrow:
+    return AccessorKind::YieldingBorrow;
+  case ReadImplKind::Borrow:
+    return AccessorKind::Borrow;
+  }
+  llvm_unreachable("bad impl kind");
+}
 
 /// How are simple write accesses implemented?
 enum class WriteImplKind {

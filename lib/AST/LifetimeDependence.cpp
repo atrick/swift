@@ -1621,12 +1621,7 @@ protected:
     if (!isImplicitOrSIL() && !useLazyInference())
       return;
 
-    // Infer the result dependency of the result or yielded value on 'self'
-    // based on the kind of accessor called by this wrapper accessor.
-    if (auto dependenceKind = getImplicitAccessorResultDependence(accessor)) {
-      depBuilder.inferDependency(resultIndex, implicitSelfParamInfo->index,
-                                 *dependenceKind);
-    }
+    inferImplicitAccessorResultDependence(accessor);
   }
 
   // Infer a mutating accessor's non-Escapable 'self' dependencies.
@@ -1685,51 +1680,62 @@ protected:
   // Implicit accessors must be consistent with the accessor that they
   // wrap. Otherwise, the sythesized implementation will report a diagnostic
   // error.
-  std::optional<LifetimeDependenceKind>
-  getImplicitAccessorResultDependence(AccessorDecl *accessor) {
+  void inferImplicitAccessorResultDependence(AccessorDecl *accessor) {
     if (!isDiagnosedNonEscapable(resultTy))
-      return std::nullopt;
+      return;
 
-    std::optional<AccessorKind> wrappedAccessorKind = std::nullopt;
     switch (accessor->getAccessorKind()) {
+    case AccessorKind::Get:
     case AccessorKind::Read:
     case AccessorKind::YieldingBorrow:
     case AccessorKind::Modify:
     case AccessorKind::YieldingMutate:
-      // read/modify are syntesized as calls to the getter.
-      wrappedAccessorKind = AccessorKind::Get;
-      break;
-    case AccessorKind::Get:
-      // getters are synthesized as access to a stored property.
       break;
     default:
       // Unknown synthesized accessor.
       // Setters are handled in inferMutatingAccessor() because they don't
       // return a value.
-      return std::nullopt;
+      return;
     }
-    if (wrappedAccessorKind) {
-      auto *var = cast<AbstractStorageDecl>(accessor->getStorage());
-      for (auto *wrappedAccessor : var->getAllAccessors()) {
-        if (wrappedAccessor->isImplicit())
-          continue;
-        if (wrappedAccessor->getAccessorKind() == wrappedAccessorKind) {
-          if (auto deps = wrappedAccessor->getLifetimeDependencies()) {
-            for (auto &dep : *deps) {
-              if (dep.getTargetIndex() != resultIndex)
-                continue;
-              if (dep.checkInherit(implicitSelfParamInfo->index))
-                return LifetimeDependenceKind::Inherit;
-              if (dep.checkScope(implicitSelfParamInfo->index))
-                return LifetimeDependenceKind::Scope;
-            }
+    // A synthesized accessor is implemented with the accessor that implements
+    // reads of its storage, and has the same parameters. So it has the same
+    // result dependence.
+    auto *storage = accessor->getStorage();
+    if (auto wrappedKind = getAccessorKindForReadImpl(storage->getReadImpl())) {
+      auto *wrappedAccessor = storage->getParsedAccessor(*wrappedKind);
+      if (wrappedAccessor && wrappedAccessor != accessor) {
+        if (auto deps = wrappedAccessor->getLifetimeDependencies()) {
+          if (auto resultDep = getLifetimeDependenceFor(*deps, resultIndex)) {
+            inferResultDependence(*resultDep);
+            return;
           }
         }
       }
     }
-    // Either a Get or Modify without any wrapped accessor. Handle these like a
-    // read of the stored property.
-    return inferLifetimeDependenceKind(*implicitSelfParamInfo);
+    // Without a wrapped accessor, handle this like a read of the stored
+    // property.
+    if (auto kind = inferLifetimeDependenceKind(*implicitSelfParamInfo)) {
+      depBuilder.inferDependency(resultIndex, implicitSelfParamInfo->index,
+                                 *kind);
+    }
+  }
+
+  // Infer the result dependence 'dep' of an accessor with the same parameters.
+  void inferResultDependence(const LifetimeDependenceInfo &dep) {
+    if (dep.isImmortal()) {
+      depBuilder.inferImmortalResult();
+      return;
+    }
+    if (auto *inheritIndices = dep.getInheritIndices()) {
+      for (unsigned index : inheritIndices->getIndices())
+        depBuilder.inferDependency(resultIndex, index,
+                                   LifetimeDependenceKind::Inherit);
+    }
+    if (auto *scopeIndices = dep.getScopeIndices()) {
+      for (unsigned index : scopeIndices->getIndices())
+        depBuilder.inferDependency(resultIndex, index,
+                                   LifetimeDependenceKind::Scope);
+    }
   }
 
   // Infer implicit initialization. A non-Escapable initializer parameter can
