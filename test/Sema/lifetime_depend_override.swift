@@ -159,3 +159,20 @@ protocol P2: P1 {
   @_lifetime(borrow ne) static func staticMethod(_ ne: NE) -> NE // expected-error {{static method 'staticMethod' has a lifetime dependence that does not match the overridden declaration}}
   @_lifetime(copy ne) func matching(_ ne: NE) -> NE
 }
+
+// rdar://192958686: An override has the opaque read accessors of the property
+// it overrides. A '_read' with a scoped dependence cannot provide a getter.
+class OpaqueReadBase {
+  var immortalRead: NE { @_lifetime(immortal) _read { yield NE() } } // expected-note {{attempt to override property here}}
+  var immortalGet: NE { @_lifetime(immortal) get { NE() } } // expected-note {{attempt to override property here}}
+  var scopedRead: NE { @_lifetime(borrow self) _read { yield NE() } }
+  var scopedReadFewer: NE { @_lifetime(borrow self) _read { yield NE() } } // expected-note {{overridden declaration is here}}
+}
+
+class OpaqueReadDerived: OpaqueReadBase {
+  override var immortalRead: NE { @_lifetime(borrow self) _read { yield NE() } } // expected-error {{property 'immortalRead' cannot override a property that is read through a getter, because its read accessor has a scoped lifetime dependence}}
+  override var immortalGet: NE { @_lifetime(borrow self) _read { yield NE() } } // expected-error {{property 'immortalGet' cannot override a property that is read through a getter, because its read accessor has a scoped lifetime dependence}}
+  // The base is read through a '_read', which is synthesized from the getter.
+  override var scopedRead: NE { @_lifetime(borrow self) get { NE() } }
+  override var scopedReadFewer: NE { @_lifetime(immortal) get { NE() } } // expected-error {{_read accessor for property 'scopedReadFewer' has a lifetime dependence that does not match the overridden declaration}}
+}
